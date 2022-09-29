@@ -1,0 +1,12 @@
+/home/petar/documents/projects/near/factory-example/contract/target/debug/deps/libthiserror_impl-d932aea3a9bd2d80.so: /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/lib.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/ast.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/attr.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/expand.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/fmt.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/generics.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/prop.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/valid.rs
+
+/home/petar/documents/projects/near/factory-example/contract/target/debug/deps/thiserror_impl-d932aea3a9bd2d80.d: /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/lib.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/ast.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/attr.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/expand.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/fmt.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/generics.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/prop.rs /home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/valid.rs
+
+/home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/lib.rs:
+/home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/ast.rs:
+/home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/attr.rs:
+/home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/expand.rs:
+/home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/fmt.rs:
+/home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/generics.rs:
+/home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/prop.rs:
+/home/petar/.cargo/registry/src/github.com-1ecc6299db9ec823/thiserror-impl-1.0.36/src/valid.rs:
