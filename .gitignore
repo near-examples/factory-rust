@@ -8,6 +8,7 @@ node_modules
 # build
 /out
 /dist
+/target
 
 # keys
 /templates/react/neardev
