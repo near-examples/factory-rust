@@ -1,7 +1,6 @@
 #!/bin/sh
 
-echo ">> Building contracts"
+echo ">> Building contract"
 
 rustup target add wasm32-unknown-unknown
-cargo build -p donation-conrtact --target wasm32-unknown-unknown --release
-cargo build -p donation-factory --target wasm32-unknown-unknown --release
+cargo build --all --target wasm32-unknown-unknown --release
