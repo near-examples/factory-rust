@@ -39,7 +39,15 @@ test.afterEach(async (t) => {
 test("create_factory_subaccount_and_deploy tests", async (t) => {
   const { factory, alice, beneficiary } = t.context.accounts;
 
-  let create = await alice.call(factory, "create_factory_subaccount_and_deploy", { "name": `sub`, "beneficiary": beneficiary }, { gas: "80000000000000", attachedDeposit: NEAR.parse("1.24 N").toString()});
+  let create = await alice.call(
+    factory,
+    "create_factory_subaccount_and_deploy",
+    { "name": `sub`, "beneficiary": beneficiary },
+    { gas: "80000000000000", attachedDeposit: NEAR.parse("1.24 N").toString()}
+  );
 
   t.is(create, true);
+
+  
+
 });

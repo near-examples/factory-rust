@@ -5,10 +5,11 @@ use crate::*;
 #[near_bindgen]
 impl Contract {
 
+  #[private]
   pub fn update_stored_contract(&mut self) {
-    // This method receives the code to be stored in the contract, but instead of
-    // receiving it through a parameter, we read it directly from the contract's input.
-    // This is necessary, since otherwise the deserialization consumes all the GAS!
+    // This method receives the code to be stored in the contract directly
+    // from the contract's input. In this way, it avoids the overhead of
+    // deserializing parameters, which would consume a huge amount of GAS
     self.code = env::input().expect("Error: No input").to_vec();
   }
 
