@@ -106,6 +106,8 @@ near call <factory-account> update_stored_contract "$BYTES" --base64 --accountId
 
 ---
 
+<br>
+
 ## Factories - Explanations & Limitations
 
 Factories are an interesting concept, here we further explain some of their implementation aspects,

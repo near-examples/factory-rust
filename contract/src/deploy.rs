@@ -1,5 +1,5 @@
 use near_sdk::serde::Serialize;
-use near_sdk::{env, log, near_bindgen, AccountId, Balance, Promise, PromiseError};
+use near_sdk::{env, log, near_bindgen, AccountId, Balance, Promise, PromiseError, PublicKey};
 
 use crate::*;
 
@@ -16,6 +16,7 @@ impl Contract {
     &mut self,
     name: String,
     beneficiary: AccountId,
+    public_key: Option<PublicKey>
   ) -> Promise {
     // Assert the sub-account is valid
     let current_account = env::current_account_id().to_string();
@@ -27,24 +28,31 @@ impl Contract {
 
     // Assert enough money is attached to create the account and deploy the contract
     let attached = env::attached_deposit();
-    assert!(
-      attached >= MIN_STORAGE_COST,
-      "Please attach at least {MIN_STORAGE_COST} yN"
-    );
+    
+    let contract_bytes: u128 = self.code.len() as u128;
+    let minimum_needed : Balance= NEAR_PER_STORAGE * contract_bytes;
+    assert!(attached >= minimum_needed, "Attach at least {minimum_needed} yN");
 
     let init_args = near_sdk::serde_json::to_vec(&DonationInitArgs {
       beneficiary: beneficiary,
     }).unwrap();
 
-    Promise::new(subaccount.clone())
+    let mut promise = Promise::new(subaccount.clone())
       .create_account()
       .transfer(attached)
       .deploy_contract(self.code.clone())
-      .function_call("init".to_owned(), init_args, NO_DEPOSIT, TGAS * 5)
-      .then(
-        Self::ext(env::current_account_id())
-          .create_factory_subaccount_and_deploy_callback(subaccount, env::predecessor_account_id(), attached),
-      )
+      .function_call("init".to_owned(), init_args, NO_DEPOSIT, TGAS * 5);
+
+    // Add full access key is the user passes one
+    if let Some(pk) = public_key {
+      promise = promise.add_full_access_key(pk);
+    }
+
+    // Add callback
+    promise.then(
+      Self::ext(env::current_account_id())
+        .create_factory_subaccount_and_deploy_callback(subaccount, env::predecessor_account_id(), attached),
+    )
   }
 
   #[private]
