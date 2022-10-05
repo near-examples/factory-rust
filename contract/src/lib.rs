@@ -12,11 +12,14 @@ const NO_DEPOSIT: Balance = 0;
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct Contract {
-  code: Vec<u8>
+    code: Vec<u8>,
 }
 
 impl Default for Contract {
-  fn default() -> Self {
-      Self{ code: DEFAULT_CONTRACT.to_vec() }
-  }
+    fn default() -> Self {
+        Self {
+            code: DEFAULT_CONTRACT.to_vec(),
+        }
+    }
 }
+

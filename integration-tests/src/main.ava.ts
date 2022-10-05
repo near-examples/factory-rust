@@ -1,5 +1,5 @@
-import { Worker, NearAccount, NEAR } from 'near-workspaces';
-import anyTest, { TestFn } from 'ava';
+import { Worker, NearAccount, NEAR } from "near-workspaces";
+import anyTest, { TestFn } from "ava";
 
 const test = anyTest as TestFn<{
   worker: Worker;
@@ -26,7 +26,7 @@ test.beforeEach(async (t) => {
   t.context.accounts = {
     factory,
     alice,
-    beneficiary
+    beneficiary,
   };
 });
 
@@ -42,12 +42,9 @@ test("create_factory_subaccount_and_deploy tests", async (t) => {
   let create = await alice.call(
     factory,
     "create_factory_subaccount_and_deploy",
-    { "name": `sub`, "beneficiary": beneficiary },
-    { gas: "80000000000000", attachedDeposit: NEAR.parse("1.24 N").toString()}
+    { name: `sub`, beneficiary: beneficiary },
+    { gas: "80000000000000", attachedDeposit: NEAR.parse("1.24 N").toString() }
   );
 
   t.is(create, true);
-
-  
-
 });
