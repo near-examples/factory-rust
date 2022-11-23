@@ -29,7 +29,8 @@ impl Contract {
         // Assert enough money is attached to create the account and deploy the contract
         let attached = env::attached_deposit();
 
-        let contract_bytes = self.code.len() as u128;
+        let code = self.code.get().unwrap();
+        let contract_bytes = code.len() as u128;
         let minimum_needed = NEAR_PER_STORAGE * contract_bytes;
         assert!(
             attached >= minimum_needed,
@@ -41,7 +42,7 @@ impl Contract {
         let mut promise = Promise::new(subaccount.clone())
             .create_account()
             .transfer(attached)
-            .deploy_contract(self.code.clone())
+            .deploy_contract(code)
             .function_call("init".to_owned(), init_args, NO_DEPOSIT, TGAS * 5);
 
         // Add full access key is the user passes one

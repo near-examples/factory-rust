@@ -9,12 +9,12 @@ impl Contract {
         // This method receives the code to be stored in the contract directly
         // from the contract's input. In this way, it avoids the overhead of
         // deserializing parameters, which would consume a huge amount of GAS
-        self.code = env::input().expect("Error: No input").to_vec();
+        self.code.set(&env::input().expect("Error: No input").to_vec());
     }
 
-    pub fn get_code(&self) -> &Vec<u8> {
+    pub fn get_code(&self) -> Vec<u8> {
         // If a contract wants to update themselves, they can ask us for the code needed
-        &self.code
+        self.code.get().unwrap()
     }
 }
 
