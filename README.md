@@ -1,4 +1,6 @@
 # Factory Example
+[![](https://img.shields.io/github/workflow/status/near-examples/factory-rust/Tests/main?color=green&label=Tests)](https://github.com/near-examples/factory-rust/actions/workflows/tests.yml)
+
 
 This example presents a factory of [donation contracts](https://github.com/near-examples/donation-rust). It allows to:
 
