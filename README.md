@@ -1,35 +1,37 @@
-# Factory Example
-[![](https://img.shields.io/github/workflow/status/near-examples/factory-rust/Tests/main?color=green&label=Tests)](https://github.com/near-examples/factory-rust/actions/workflows/tests.yml)
+# contract
 
+cargo-near-new-project-description
 
-This example presents a factory of [donation contracts](https://github.com/near-examples/donation-rust). It allows to:
+## How to Build Locally?
 
-1. Create a sub-account of the factory and deploy the stored contract on it (`create_factory_subaccount_and_deploy`).
-2. Change the stored contract using the `update_stored_contract` method.
-
-<br />
-
-# Quickstart
-
-Clone this repository locally or [**open it in gitpod**](https://gitpod.io/#/github.com/near-examples/multiple-cross-contract-calls). Then follow these steps:
-
-### 1. Install Dependencies
+Install [`cargo-near`](https://github.com/near/cargo-near) and run:
 
 ```bash
-npm install
+cargo near build
 ```
 
-### 2. Test the Contract
-
-Deploy your contract in a sandbox and simulate interactions from users.
+## How to Test Locally?
 
 ```bash
-npm test
+cargo test
 ```
 
----
+## How to Deploy?
 
-# Learn More
+Deployment is automated with GitHub Actions CI/CD pipeline.
+To deploy manually, install [`cargo-near`](https://github.com/near/cargo-near) and run:
 
-1. Learn more about the contract through its [README](./contract/README.md).
-2. Check [**our documentation**](https://docs.near.org/develop/welcome).
+```bash
+cargo near deploy <account-id>
+```
+
+## Useful Links
+
+- [cargo-near](https://github.com/near/cargo-near) - NEAR smart contract development toolkit for Rust
+- [near CLI](https://near.cli.rs) - Iteract with NEAR blockchain from command line
+- [NEAR Rust SDK Documentation](https://docs.near.org/sdk/rust/introduction)
+- [NEAR Documentation](https://docs.near.org)
+- [NEAR StackOverflow](https://stackoverflow.com/questions/tagged/nearprotocol)
+- [NEAR Discord](https://near.chat)
+- [NEAR Telegram Developers Community Group](https://t.me/neardev)
+- NEAR DevHub: [Telegram](https://t.me/neardevhub), [Twitter](https://twitter.com/neardevhub)

@@ -1,5 +1,5 @@
 use near_sdk::serde::Serialize;
-use near_sdk::{env, log, near_bindgen, AccountId, Balance, Promise, PromiseError, PublicKey};
+use near_sdk::{env, log, near_bindgen, AccountId, NearToken, Promise, PromiseError, PublicKey};
 
 use crate::{Contract, ContractExt, NEAR_PER_STORAGE, NO_DEPOSIT, TGAS};
 
@@ -26,12 +26,12 @@ impl Contract {
             "Invalid subaccount"
         );
 
-        // Assert enough money is attached to create the account and deploy the contract
+        // Assert enough tokens are attached to create the account and deploy the contract
         let attached = env::attached_deposit();
 
-        let code = self.code.get().unwrap();
+        let code = self.code.clone().unwrap();
         let contract_bytes = code.len() as u128;
-        let minimum_needed = NEAR_PER_STORAGE * contract_bytes;
+        let minimum_needed = NEAR_PER_STORAGE.saturating_mul(contract_bytes);
         assert!(
             attached >= minimum_needed,
             "Attach at least {minimum_needed} yⓃ"
@@ -43,7 +43,12 @@ impl Contract {
             .create_account()
             .transfer(attached)
             .deploy_contract(code)
-            .function_call("init".to_owned(), init_args, NO_DEPOSIT, TGAS * 5);
+            .function_call(
+                "init".to_owned(),
+                init_args,
+                NO_DEPOSIT,
+                TGAS.saturating_mul(5),
+            );
 
         // Add full access key is the user passes one
         if let Some(pk) = public_key {
@@ -65,7 +70,7 @@ impl Contract {
         &mut self,
         account: AccountId,
         user: AccountId,
-        attached: Balance,
+        attached: NearToken,
         #[callback_result] create_deploy_result: Result<(), PromiseError>,
     ) -> bool {
         if let Ok(_result) = create_deploy_result {
@@ -80,4 +85,3 @@ impl Contract {
         false
     }
 }
-
