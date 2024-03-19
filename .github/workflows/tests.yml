@@ -1,4 +1,4 @@
-name: Tests
+name: Tests Contract RS
 on: push
 jobs:
   workflows:
@@ -7,16 +7,8 @@ jobs:
         platform: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.platform }}
     steps:
-      - name: Checkout branch
-        uses: actions/checkout@v2
-      - name: Install Node
-        uses: actions/setup-node@v2
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-      - name: Install modules
-        run: yarn
-      - name: Run tests
-        run: yarn test
+      - uses: actions/checkout@v2
+      - name: Install and test modules
+        run: |
+          cd ./contract-rs
+          cargo test
