@@ -1,17 +1,20 @@
-use near_sdk::collections::LazyOption;
-use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::{near_bindgen, Balance, Gas};
+// Find all our documentation at https://docs.near.org
+use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
+use near_sdk::store::LazyOption;
+use near_sdk::{near_bindgen, Gas, NearToken};
 
 mod deploy;
 mod manager;
 
-const NEAR_PER_STORAGE: Balance = 10_000_000_000_000_000_000; // 10e18yⓃ
+const NEAR_PER_STORAGE: NearToken = NearToken::from_yoctonear(10u128.pow(18)); // 10e18yⓃ
 const DEFAULT_CONTRACT: &[u8] = include_bytes!("./donation-contract/donation.wasm");
-const TGAS: Gas = Gas(10u64.pow(12)); // 10e12yⓃ
-const NO_DEPOSIT: Balance = 0; // 0yⓃ
+const TGAS: Gas = Gas::from_tgas(1); // 10e12yⓃ
+const NO_DEPOSIT: NearToken = NearToken::from_near(0); // 0yⓃ
 
+// Define the contract structure
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
+#[borsh(crate = "near_sdk::borsh")]
 pub struct Contract {
     // Since a contract is something big to store, we use LazyOptions
     // this way it is not deserialized on each method call
@@ -21,11 +24,11 @@ pub struct Contract {
     // However, this does not enable to update the stored code.
 }
 
+// Define the default, which automatically initializes the contract
 impl Default for Contract {
     fn default() -> Self {
         Self {
-            code: LazyOption::new("code".as_bytes(), Some(&DEFAULT_CONTRACT.to_vec())),
+            code: LazyOption::new("code".as_bytes(), Some(DEFAULT_CONTRACT.to_vec())),
         }
     }
 }
-
