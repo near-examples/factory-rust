@@ -1,7 +1,6 @@
 // Find all our documentation at https://docs.near.org
-use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::store::LazyOption;
-use near_sdk::{near_bindgen, Gas, NearToken};
+use near_sdk::{near, Gas, NearToken};
 
 mod deploy;
 mod manager;
@@ -12,9 +11,7 @@ const TGAS: Gas = Gas::from_tgas(1); // 10e12yⓃ
 const NO_DEPOSIT: NearToken = NearToken::from_near(0); // 0yⓃ
 
 // Define the contract structure
-#[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize)]
-#[borsh(crate = "near_sdk::borsh")]
+#[near(contract_state)]
 pub struct Contract {
     // Since a contract is something big to store, we use LazyOptions
     // this way it is not deserialized on each method call

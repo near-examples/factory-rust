@@ -1,5 +1,5 @@
 use near_sdk::serde::Serialize;
-use near_sdk::{env, log, near_bindgen, AccountId, NearToken, Promise, PromiseError, PublicKey};
+use near_sdk::{env, log, near, AccountId, NearToken, Promise, PromiseError, PublicKey};
 
 use crate::{Contract, ContractExt, NEAR_PER_STORAGE, NO_DEPOSIT, TGAS};
 
@@ -9,7 +9,7 @@ struct DonationInitArgs {
     beneficiary: AccountId,
 }
 
-#[near_bindgen]
+#[near]
 impl Contract {
     #[payable]
     pub fn create_factory_subaccount_and_deploy(
