@@ -1,8 +1,8 @@
-use near_sdk::{env, near_bindgen};
+use near_sdk::{env, near};
 
 use crate::{Contract, ContractExt};
 
-#[near_bindgen]
+#[near]
 impl Contract {
     #[private]
     pub fn update_stored_contract(&mut self) {
