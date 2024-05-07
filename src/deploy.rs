@@ -34,7 +34,7 @@ impl Contract {
         let minimum_needed = NEAR_PER_STORAGE.saturating_mul(contract_bytes);
         assert!(
             attached >= minimum_needed,
-            "Attach at least {minimum_needed} yⓃ"
+            "Attach at least {minimum_needed}, {attached} was provided "
         );
 
         let init_args = near_sdk::serde_json::to_vec(&DonationInitArgs { beneficiary }).unwrap();
@@ -73,13 +73,18 @@ impl Contract {
         attached: NearToken,
         #[callback_result] create_deploy_result: Result<(), PromiseError>,
     ) -> bool {
-        if let Ok(_result) = create_deploy_result {
-            log!(format!("Correctly created and deployed to {account}"));
-            return true;
-        };
+        match create_deploy_result {
+            Ok(_result) => {
+                log!(format!("Correctly created and deployed to {account}"));
+                return true;
+            }
+            Err(returned_err) => {
+                log!(format!("Bad error happened {:?}", returned_err));
+            }
+        }
 
         log!(format!(
-            "Error creating {account}, returning {attached}yⓃ to {user}"
+            "Error creating {account}, returning {attached} to {user}"
         ));
         Promise::new(user).transfer(attached);
         false
