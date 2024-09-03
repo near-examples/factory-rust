@@ -1,5 +1,5 @@
 use near_sdk::serde::Serialize;
-use near_sdk::{env, log, near, AccountId, NearToken, Promise, PromiseError, PublicKey, require};
+use near_sdk::{env, log, near, AccountId, NearToken, Promise, PromiseError, PublicKey};
 
 use crate::{Contract, ContractExt, NEAR_PER_STORAGE, NO_DEPOSIT, TGAS};
 
@@ -21,7 +21,7 @@ impl Contract {
         // Assert the sub-account is valid
         let current_account = env::current_account_id().to_string();
         let subaccount: AccountId = format!("{name}.{current_account}").parse().unwrap();
-        require!(
+        assert!(
             env::is_valid_account_id(subaccount.as_bytes()),
             "Invalid subaccount"
         );
@@ -34,9 +34,9 @@ impl Contract {
         let contract_storage_cost = NEAR_PER_STORAGE.saturating_mul(contract_bytes);
         // Require a little more since storage cost is not exact
         let minimum_needed = contract_storage_cost.saturating_add(NearToken::from_millinear(100));
-        require!(
+        assert!(
             attached >= minimum_needed,
-            "Attach at least {minimum_needed} yⓃ",
+            "Attach at least {minimum_needed} yⓃ"
         );
 
         let init_args = near_sdk::serde_json::to_vec(&DonationInitArgs { beneficiary }).unwrap();
