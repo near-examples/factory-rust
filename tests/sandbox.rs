@@ -1,21 +1,19 @@
-use near_workspaces::types::{AccountId, KeyType, NearToken, SecretKey};
+use near_workspaces::types::{AccountId, NearToken};
 use serde_json::json;
+
+const TEN_NEAR: NearToken = NearToken::from_near(10);
 
 #[tokio::test]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sandbox = near_workspaces::sandbox().await?;
+    let root = sandbox.root_account()?;
+
+    // Create accounts
+    let alice = create_subaccount(&root, "alice").await?;
+    let bob = create_subaccount(&root, "bob").await?;
+
     let contract_wasm = near_workspaces::compile_project("./").await?;
     let contract = sandbox.dev_deploy(&contract_wasm).await?;
-
-    let alice = sandbox
-        .create_tla(
-            "alice.test.near".parse().unwrap(),
-            SecretKey::from_random(KeyType::ED25519),
-        )
-        .await?
-        .unwrap();
-
-    let bob = sandbox.dev_create_account().await?;
 
     let res = contract
         .call("create_factory_subaccount_and_deploy")
@@ -49,4 +47,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(res.is_success());
 
     Ok(())
+}
+
+async fn create_subaccount(
+    root: &near_workspaces::Account,
+    name: &str,
+) -> Result<near_workspaces::Account, Box<dyn std::error::Error>> {
+    let subaccount = root
+        .create_subaccount(name)
+        .initial_balance(TEN_NEAR)
+        .transact()
+        .await?
+        .unwrap();
+
+    Ok(subaccount)
 }

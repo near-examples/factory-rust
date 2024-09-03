@@ -74,13 +74,11 @@ impl Contract {
         #[callback_result] create_deploy_result: Result<(), PromiseError>,
     ) -> bool {
         if let Ok(_result) = create_deploy_result {
-            log!(format!("Correctly created and deployed to {account}"));
+            log!("Correctly created and deployed to {account}");
             return true;
         };
 
-        log!(format!(
-            "Error creating {account}, returning {attached}yⓃ to {user}"
-        ));
+        log!("Error creating {account}, returning {attached}yⓃ to {user}");
         Promise::new(user).transfer(attached);
         false
     }
