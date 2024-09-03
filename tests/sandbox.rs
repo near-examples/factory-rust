@@ -15,11 +15,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let contract_wasm = near_workspaces::compile_project("./").await?;
     let contract = sandbox.dev_deploy(&contract_wasm).await?;
 
-    let res = contract
-        .call("create_factory_subaccount_and_deploy")
+    // Launch new donation contract through factory
+    let res = alice
+        .call(contract.id(), "create_factory_subaccount_and_deploy")
         .args_json(json!({"name": "donation_for_alice", "beneficiary": alice.id()}))
         .max_gas()
-        .deposit(NearToken::from_near(5))
+        .deposit(NearToken::from_millinear(1700))
         .transact()
         .await?;
 
@@ -45,6 +46,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     assert!(res.is_success());
+
+    // Try to create new donation contract with insufficient deposit
+    let res = alice
+        .call(contract.id(), "create_factory_subaccount_and_deploy")
+        .args_json(json!({"name": "donation_for_alice_2", "beneficiary": alice.id()}))
+        .max_gas()
+        .deposit(NearToken::from_millinear(1500))
+        .transact()
+        .await?;
+
+    assert!(res.is_failure());
 
     Ok(())
 }
