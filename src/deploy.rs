@@ -1,87 +1,63 @@
-use near_sdk::serde::Serialize;
-use near_sdk::{env, log, near, AccountId, NearToken, Promise, PromiseError, PublicKey};
+use near_sdk::{env, json_types::U128, log, near, require, AccountId, NearToken, Promise, PromiseError, PublicKey};
+use near_contract_standards::fungible_token::metadata::FungibleTokenMetadata;
 
-use crate::{Contract, ContractExt, NEAR_PER_STORAGE, NO_DEPOSIT, TGAS};
+use crate::{Contract, ContractExt, FT_CONTRACT, NEAR_PER_STORAGE, NO_DEPOSIT, TGAS};
 
-#[derive(Serialize)]
-#[serde(crate = "near_sdk::serde")]
-struct DonationInitArgs {
-    beneficiary: AccountId,
+
+#[near(serializers = [json])]
+pub struct TokenArgs {
+    owner_id: AccountId,
+    total_supply: U128,
+    metadata: FungibleTokenMetadata,
 }
 
 #[near]
 impl Contract {
+
+    fn get_required(&self, args: &TokenArgs) -> u128 {
+        ((FT_WASM_CODE.len() + EXTRA_BYTES + args.try_to_vec().unwrap().len() * 2) as NearToken)
+            * STORAGE_PRICE_PER_BYTE)
+            .into()
+    }
+
     #[payable]
-    pub fn create_factory_subaccount_and_deploy(
+    pub fn create_token(
         &mut self,
-        name: String,
-        beneficiary: AccountId,
-        public_key: Option<PublicKey>,
+        args: TokenArgs,
     ) -> Promise {
+        args.metadata.assert_valid();
+        let token_id = args.metadata.symbol.to_ascii_lowercase();
+
+        require!(is_valid_token_id(&token_id), "Invalid Symbol");
+
         // Assert the sub-account is valid
-        let current_account = env::current_account_id().to_string();
-        let subaccount: AccountId = format!("{name}.{current_account}").parse().unwrap();
+        let token_account_id = format!("{}.{}", token_id, env::current_account_id());
         assert!(
-            env::is_valid_account_id(subaccount.as_bytes()),
-            "Invalid subaccount"
+            env::is_valid_account_id(token_account_id.as_bytes()),
+            "Token Account ID is invalid"
         );
 
         // Assert enough tokens are attached to create the account and deploy the contract
         let attached = env::attached_deposit();
+        let required = self.get_required(&args);
 
-        let code = self.code.clone().unwrap();
-        let contract_bytes = code.len() as u128;
-        let minimum_needed = NEAR_PER_STORAGE.saturating_mul(contract_bytes);
         assert!(
-            attached >= minimum_needed,
+            attached >= required,
             "Attach at least {minimum_needed} yⓃ"
         );
 
-        let init_args = near_sdk::serde_json::to_vec(&DonationInitArgs { beneficiary }).unwrap();
+        let init_args = near_sdk::serde_json::to_vec(args).unwrap();
 
         let mut promise = Promise::new(subaccount.clone())
             .create_account()
             .transfer(attached)
-            .deploy_contract(code)
+            .deploy_contract(FT_CONTRACT)
             .function_call(
-                "init".to_owned(),
+                "new".to_owned(),
                 init_args,
                 NO_DEPOSIT,
-                TGAS.saturating_mul(5),
+                TGAS.saturating_mul(50),
             );
-
-        // Add full access key is the user passes one
-        if let Some(pk) = public_key {
-            promise = promise.add_full_access_key(pk);
-        }
-
-        // Add callback
-        promise.then(
-            Self::ext(env::current_account_id()).create_factory_subaccount_and_deploy_callback(
-                subaccount,
-                env::predecessor_account_id(),
-                attached,
-            ),
-        )
     }
 
-    #[private]
-    pub fn create_factory_subaccount_and_deploy_callback(
-        &mut self,
-        account: AccountId,
-        user: AccountId,
-        attached: NearToken,
-        #[callback_result] create_deploy_result: Result<(), PromiseError>,
-    ) -> bool {
-        if let Ok(_result) = create_deploy_result {
-            log!(format!("Correctly created and deployed to {account}"));
-            return true;
-        };
-
-        log!(format!(
-            "Error creating {account}, returning {attached}yⓃ to {user}"
-        ));
-        Promise::new(user).transfer(attached);
-        false
-    }
 }
