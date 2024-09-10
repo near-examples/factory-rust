@@ -1,30 +1,41 @@
-use near_sdk::{env, json_types::U128, log, near, require, AccountId, NearToken, Promise, PromiseError, PublicKey};
 use near_contract_standards::fungible_token::metadata::FungibleTokenMetadata;
+use near_sdk::{borsh, env, json_types::U128, near, require, AccountId, NearToken, Promise};
 
-use crate::{Contract, ContractExt, FT_CONTRACT, NEAR_PER_STORAGE, NO_DEPOSIT, TGAS};
+use crate::{Contract, ContractExt, FT_CONTRACT, NO_DEPOSIT, TGAS};
 
+type TokenId = String;
 
-#[near(serializers = [json])]
+const EXTRA_BYTES: usize = 10000;
+
+#[near(serializers = [json, borsh])]
 pub struct TokenArgs {
     owner_id: AccountId,
     total_supply: U128,
     metadata: FungibleTokenMetadata,
 }
 
+pub fn is_valid_token_id(token_id: &TokenId) -> bool {
+    for c in token_id.as_bytes() {
+        match c {
+            b'0'..=b'9' | b'a'..=b'z' => (),
+            _ => return false,
+        }
+    }
+    true
+}
+
 #[near]
 impl Contract {
-
-    fn get_required(&self, args: &TokenArgs) -> u128 {
-        ((FT_WASM_CODE.len() + EXTRA_BYTES + args.try_to_vec().unwrap().len() * 2) as NearToken)
-            * STORAGE_PRICE_PER_BYTE)
-            .into()
+    pub fn get_required(&self, args: &TokenArgs) -> NearToken {
+        env::storage_byte_cost().saturating_mul(
+            (FT_CONTRACT.len() + EXTRA_BYTES + borsh::to_vec(args).unwrap().len() * 2)
+                .try_into()
+                .unwrap(),
+        )
     }
 
     #[payable]
-    pub fn create_token(
-        &mut self,
-        args: TokenArgs,
-    ) -> Promise {
+    pub fn create_token(&mut self, args: TokenArgs) -> Promise {
         args.metadata.assert_valid();
         let token_id = args.metadata.symbol.to_ascii_lowercase();
 
@@ -32,7 +43,7 @@ impl Contract {
 
         // Assert the sub-account is valid
         let token_account_id = format!("{}.{}", token_id, env::current_account_id());
-        assert!(
+        require!(
             env::is_valid_account_id(token_account_id.as_bytes()),
             "Token Account ID is invalid"
         );
@@ -41,23 +52,25 @@ impl Contract {
         let attached = env::attached_deposit();
         let required = self.get_required(&args);
 
-        assert!(
+        require!(
             attached >= required,
-            "Attach at least {minimum_needed} yⓃ"
+            format!("Attach at least {required} yⓃ")
         );
 
-        let init_args = near_sdk::serde_json::to_vec(args).unwrap();
+        let token_account_id: AccountId = format!("{}.{}", token_id, env::current_account_id())
+            .parse()
+            .unwrap();
+        let init_args = near_sdk::serde_json::to_vec(&args).unwrap();
 
-        let mut promise = Promise::new(subaccount.clone())
+        Promise::new(token_account_id)
             .create_account()
             .transfer(attached)
-            .deploy_contract(FT_CONTRACT)
+            .deploy_contract(FT_CONTRACT.to_vec())
             .function_call(
                 "new".to_owned(),
                 init_args,
                 NO_DEPOSIT,
                 TGAS.saturating_mul(50),
-            );
+            )
     }
-
 }
