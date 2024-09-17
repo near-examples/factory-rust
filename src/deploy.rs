@@ -31,7 +31,9 @@ impl Contract {
 
         let code = self.code.clone().unwrap();
         let contract_bytes = code.len() as u128;
-        let minimum_needed = NEAR_PER_STORAGE.saturating_mul(contract_bytes);
+        let contract_storage_cost = NEAR_PER_STORAGE.saturating_mul(contract_bytes);
+        // Require a little more since storage cost is not exact
+        let minimum_needed = contract_storage_cost.saturating_add(NearToken::from_millinear(100));
         assert!(
             attached >= minimum_needed,
             "Attach at least {minimum_needed} yⓃ"
@@ -74,13 +76,11 @@ impl Contract {
         #[callback_result] create_deploy_result: Result<(), PromiseError>,
     ) -> bool {
         if let Ok(_result) = create_deploy_result {
-            log!(format!("Correctly created and deployed to {account}"));
+            log!("Correctly created and deployed to {account}");
             return true;
         };
 
-        log!(format!(
-            "Error creating {account}, returning {attached}yⓃ to {user}"
-        ));
+        log!("Error creating {account}, returning {attached}yⓃ to {user}");
         Promise::new(user).transfer(attached);
         false
     }
