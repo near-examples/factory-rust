@@ -28,7 +28,7 @@ pub fn is_valid_token_id(token_id: &TokenId) -> bool {
 impl Contract {
     pub fn get_required(&self, args: &TokenArgs) -> NearToken {
         env::storage_byte_cost().saturating_mul(
-            (FT_CONTRACT.len() + EXTRA_BYTES + borsh::to_vec(args).unwrap().len() * 2)
+            (FT_CONTRACT.len() + EXTRA_BYTES + borsh::to_vec(args).unwrap().len())
                 .try_into()
                 .unwrap(),
         )
@@ -57,12 +57,9 @@ impl Contract {
             format!("Attach at least {required} yⓃ")
         );
 
-        let token_account_id: AccountId = format!("{}.{}", token_id, env::current_account_id())
-            .parse()
-            .unwrap();
         let init_args = near_sdk::serde_json::to_vec(&args).unwrap();
 
-        Promise::new(token_account_id)
+        Promise::new(token_account_id.parse().unwrap())
             .create_account()
             .transfer(attached)
             .deploy_contract(FT_CONTRACT.to_vec())

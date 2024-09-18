@@ -15,16 +15,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sandbox = near_workspaces::sandbox().await?;
     let contract_wasm = near_workspaces::compile_project("./").await?;
     let contract = sandbox.dev_deploy(&contract_wasm).await?;
-    let token_owner_account = sandbox.root_account().unwrap();
-    let alice_account = token_owner_account
-        .create_subaccount("alice")
-        .initial_balance(NearToken::from_near(30))
+    let root = sandbox.root_account().unwrap();
+
+    let token_owner_account = root
+        .create_subaccount("the-token-owner-account-1234567890123456789")
+        .initial_balance(NearToken::from_near(5))
         .transact()
         .await?
         .into_result()?;
-    let bob_account = token_owner_account
+
+    let alice_account = root
+        .create_subaccount("alice")
+        .initial_balance(NearToken::from_near(5))
+        .transact()
+        .await?
+        .into_result()?;
+    
+    let bob_account = root
         .create_subaccount("bob")
-        .initial_balance(NearToken::from_near(30))
+        .initial_balance(NearToken::from_near(5))
         .transact()
         .await?
         .into_result()?;
@@ -47,18 +56,19 @@ async fn create_token(
     bob_account: &Account,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Initial setup
-    let symbol = "TEST";
+    let symbol = "SOMETHING";
     let total_supply = U128(100);
     let token_id = symbol.to_ascii_lowercase();
     let metadata = FungibleTokenMetadata {
         spec: "ft-1.0.0".to_string(),
-        name: "Test Token".to_string(),
+        name: "The Something Token".to_string(),
         symbol: symbol.to_string(),
-        decimals: 1,
-        icon: None,
+        decimals: 6,
+        icon: Some("data:image/svg+xml,%3Csvg width='111' height='90' viewBox='0 0 111 90' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M24.4825 0.862305H88.0496C89.5663 0.862305 90.9675 1.64827 91.7239 2.92338L110.244 34.1419C111.204 35.7609 110.919 37.8043 109.549 39.1171L58.5729 87.9703C56.9216 89.5528 54.2652 89.5528 52.6139 87.9703L1.70699 39.1831C0.305262 37.8398 0.0427812 35.7367 1.07354 34.1077L20.8696 2.82322C21.6406 1.60483 23.0087 0.862305 24.4825 0.862305ZM79.8419 14.8003V23.5597H61.7343V29.6329C74.4518 30.2819 83.9934 32.9475 84.0642 36.1425L84.0638 42.803C83.993 45.998 74.4518 48.6635 61.7343 49.3125V64.2168H49.7105V49.3125C36.9929 48.6635 27.4513 45.998 27.3805 42.803L27.381 36.1425C27.4517 32.9475 36.9929 30.2819 49.7105 29.6329V23.5597H31.6028V14.8003H79.8419ZM55.7224 44.7367C69.2943 44.7367 80.6382 42.4827 83.4143 39.4727C81.0601 36.9202 72.5448 34.9114 61.7343 34.3597V40.7183C59.7966 40.8172 57.7852 40.8693 55.7224 40.8693C53.6595 40.8693 51.6481 40.8172 49.7105 40.7183V34.3597C38.8999 34.9114 30.3846 36.9202 28.0304 39.4727C30.8066 42.4827 42.1504 44.7367 55.7224 44.7367Z' fill='%23009393'/%3E%3C/svg%3E".to_string()),
         reference: None,
         reference_hash: None,
     };
+
     let token_args = TokenArgs {
         owner_id: token_owner_account.id().clone(),
         total_supply,
@@ -66,7 +76,7 @@ async fn create_token(
     };
 
     // Getting required deposit based on provided arguments
-    let required_deposit: serde_json::Value = contract
+    let required_deposit: U128 = contract
         .view("get_required")
         .args_json(json!({"args": token_args}))
         .await?
@@ -77,9 +87,7 @@ async fn create_token(
         .call("create_token")
         .args_json(json!({"args": token_args}))
         .max_gas()
-        .deposit(NearToken::from_yoctonear(
-          required_deposit.as_str().unwrap().parse::<u128>()? - 1,
-        ))
+        .deposit(NearToken::from_yoctonear(required_deposit.0 - 1))
         .transact()
         .await?;
     assert!(res_0.is_failure());
@@ -89,13 +97,24 @@ async fn create_token(
         .call("create_token")
         .args_json(json!({"args": token_args}))
         .max_gas()
-        .deposit(NearToken::from_yoctonear(
-            required_deposit.as_str().unwrap().parse::<u128>()?,
-        ))
+        .deposit(NearToken::from_yoctonear(required_deposit.0))
         .transact()
         .await?;
 
+    println!("{:?}", required_deposit);
     assert!(res_1.is_success());
+
+    // Creating token with the required deposit
+    let res_3 = contract
+        .call("create_token")
+        .args_json(json!({"args": token_args}))
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(required_deposit.0))
+        .transact()
+        .await?;
+
+    println!("{:?}", required_deposit);
+    assert!(res_3.is_failure());
 
     // Checking created token account and metadata
     let token_account_id: AccountId = format!("{}.{}", token_id, contract.id()).parse().unwrap();
@@ -108,29 +127,23 @@ async fn create_token(
     assert_eq!(token_metadata.symbol, symbol);
 
     // Checking token supply
-    let token_total_supply: serde_json::Value = token_owner_account
+    let token_total_supply: U128 = token_owner_account
         .view(&token_account_id, "ft_total_supply")
         .args_json(json!({}))
         .await?
         .json()?;
-    assert_eq!(
-        token_total_supply.as_str().unwrap().parse::<u128>()?,
-        u128::from(total_supply)
-    );
+    assert_eq!(token_total_supply.0, total_supply.0);
 
     // Checking total supply belongs to the owner account
-    let token_owner_balance: serde_json::Value = token_owner_account
+    let token_owner_balance: U128 = token_owner_account
         .view(&token_account_id, "ft_balance_of")
         .args_json(json!({"account_id": token_owner_account.id()}))
         .await?
         .json()?;
 
-    assert_eq!(
-        token_owner_balance.as_str().unwrap().parse::<u128>()?,
-        u128::from(total_supply)
-    );
+    assert_eq!(token_owner_balance.0, total_supply.0);
 
-    // Checking transfering tokens from owner to other account
+    // Checking transferring tokens from owner to other account
     let _ = alice_account
         .call(&token_account_id, "storage_deposit")
         .args_json(json!({"account_id": alice_account.id()}))
@@ -138,32 +151,33 @@ async fn create_token(
         .deposit(NearToken::from_millinear(250))
         .transact()
         .await?;
-    let alice_balance_before: serde_json::Value = alice_account
+
+    let alice_balance_before: U128 = alice_account
         .view(&token_account_id, "ft_balance_of")
         .args_json(json!({"account_id": alice_account.id()}))
         .await?
         .json()?;
-    assert_eq!(alice_balance_before, "0");
+    assert_eq!(alice_balance_before.0, 0);
 
     let _ = token_owner_account
         .call(&token_account_id, "ft_transfer")
         .args_json(json!({
             "receiver_id": alice_account.id(),
-            "amount": "1",
+            "amount": "2",
         }))
         .max_gas()
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await?;
 
-    let alice_balance_after: serde_json::Value = alice_account
+    let alice_balance_after: U128 = alice_account
         .view(&token_account_id, "ft_balance_of")
         .args_json(json!({"account_id": alice_account.id()}))
         .await?
         .json()?;
-    assert_eq!(alice_balance_after, "1");
+    assert_eq!(alice_balance_after.0, 2);
 
-    // Checking transfering token from alice to bob
+    // Checking transferring token from alice to bob
     let _ = bob_account
         .call(&token_account_id, "storage_deposit")
         .args_json(json!({"account_id": bob_account.id()}))
@@ -171,12 +185,13 @@ async fn create_token(
         .deposit(NearToken::from_millinear(250))
         .transact()
         .await?;
-    let bob_balance_before: serde_json::Value = bob_account
+    let bob_balance_before: U128 = bob_account
         .view(&token_account_id, "ft_balance_of")
         .args_json(json!({"account_id": bob_account.id()}))
         .await?
         .json()?;
-    assert_eq!(bob_balance_before, "0");
+    assert_eq!(bob_balance_before.0, 0);
+
     let _ = alice_account
         .call(&token_account_id, "ft_transfer")
         .args_json(json!({
@@ -187,11 +202,28 @@ async fn create_token(
         .deposit(NearToken::from_yoctonear(1))
         .transact()
         .await?;
-    let bob_balance_after: serde_json::Value = bob_account
+    let bob_balance_after: U128 = bob_account
         .view(&token_account_id, "ft_balance_of")
         .args_json(json!({"account_id": bob_account.id()}))
         .await?
         .json()?;
-    assert_eq!(bob_balance_after, "1");
+    assert_eq!(bob_balance_after.0, 1);
+
+    let alice_balance_after: U128 = alice_account
+        .view(&token_account_id, "ft_balance_of")
+        .args_json(json!({"account_id": alice_account.id()}))
+        .await?
+        .json()?;
+    assert_eq!(alice_balance_after.0, 1);
+
+    // Checking total supply belongs to the owner account
+    let token_owner_balance: U128 = token_owner_account
+        .view(&token_account_id, "ft_balance_of")
+        .args_json(json!({"account_id": token_owner_account.id()}))
+        .await?
+        .json()?;
+
+    assert_eq!(token_owner_balance.0, total_supply.0 - 2);
+
     Ok(())
 }

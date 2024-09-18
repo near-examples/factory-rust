@@ -1,7 +1,7 @@
 [package]
-name = "contract"
+name = "token-factory"
 description = "Factory Contract Example"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 # TODO: Fill out the repository field to help NEAR ecosystem tools to discover your project.
 # NEP-0330 is automatically implemented for all contracts built with https://github.com/near/cargo-near.
