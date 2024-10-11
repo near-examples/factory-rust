@@ -1,5 +1,5 @@
 use near_contract_standards::fungible_token::metadata::FungibleTokenMetadata;
-use near_sdk::{borsh, env, json_types::U128, near, require, AccountId, NearToken, Promise};
+use near_sdk::{borsh, env, json_types::U128, log, near, require, serde_json::json, AccountId, NearToken, Promise, PromiseError};
 
 use crate::{Contract, ContractExt, FT_CONTRACT, NO_DEPOSIT, TGAS};
 
@@ -59,6 +59,12 @@ impl Contract {
 
         let init_args = near_sdk::serde_json::to_vec(&args).unwrap();
 
+        let user = env::predecessor_account_id();
+        let callback_args = json!({ "user": user, "deposit": attached })
+            .to_string()
+            .into_bytes()
+            .to_vec();
+
         Promise::new(token_account_id.parse().unwrap())
             .create_account()
             .transfer(attached)
@@ -69,5 +75,28 @@ impl Contract {
                 NO_DEPOSIT,
                 TGAS.saturating_mul(50),
             )
+            .then(Promise::new(env::current_account_id()).function_call(
+                "create_callback".to_string(),
+                callback_args,
+                NearToken::from_near(0),
+                TGAS.saturating_mul(30),
+            ))
+    }
+
+    #[private]
+    pub fn create_callback(
+        &self,
+        user: AccountId,
+        deposit: NearToken,
+        #[callback_result] call_result: Result<(), PromiseError>,
+    ) -> bool {
+        match call_result {
+            Ok(_) => true,
+            Err(e) => {
+                log!("Error creating token: {:?}", e);
+                Promise::new(user).transfer(deposit);
+                false
+            }
+        }
     }
 }

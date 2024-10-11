@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .transact()
         .await?
         .into_result()?;
-    
+
     let bob_account = root
         .create_subaccount("bob")
         .initial_balance(NearToken::from_near(5))
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn create_token(
-    contract: &Contract,
+    factory: &Contract,
     token_owner_account: &Account,
     alice_account: &Account,
     bob_account: &Account,
@@ -76,48 +76,55 @@ async fn create_token(
     };
 
     // Getting required deposit based on provided arguments
-    let required_deposit: U128 = contract
+    let required_deposit: U128 = factory
         .view("get_required")
         .args_json(json!({"args": token_args}))
         .await?
         .json()?;
 
     // Creating token with less than required deposit (should fail)
-    let res_0 = contract
-        .call("create_token")
+    let not_enough = alice_account
+        .call(factory.id(), "create_token")
         .args_json(json!({"args": token_args}))
         .max_gas()
         .deposit(NearToken::from_yoctonear(required_deposit.0 - 1))
         .transact()
         .await?;
-    assert!(res_0.is_failure());
+    assert!(not_enough.is_failure());
 
     // Creating token with the required deposit
-    let res_1 = contract
-        .call("create_token")
+    let alice_succeeds = alice_account
+        .call(factory.id(), "create_token")
+        .args_json(json!({"args": token_args}))
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(required_deposit.0))
+        .transact()
+        .await?;
+    assert!(alice_succeeds.json::<bool>()? == true);
+
+    // Creating same token fails
+    let bob_balance = bob_account.view_account().await?.balance;
+
+    let bob_fails = bob_account
+        .call(factory.id(), "create_token")
         .args_json(json!({"args": token_args}))
         .max_gas()
         .deposit(NearToken::from_yoctonear(required_deposit.0))
         .transact()
         .await?;
 
-    println!("{:?}", required_deposit);
-    assert!(res_1.is_success());
+    let bob_balance_after = bob_account.view_account().await?.balance;
+    let rest = bob_balance.saturating_sub(bob_balance_after).as_millinear();
+    println!("{:?}", rest);
 
-    // Creating token with the required deposit
-    let res_3 = contract
-        .call("create_token")
-        .args_json(json!({"args": token_args}))
-        .max_gas()
-        .deposit(NearToken::from_yoctonear(required_deposit.0))
-        .transact()
-        .await?;
+    // bob fails
+    assert!(bob_fails.json::<bool>()? == false);
 
-    println!("{:?}", required_deposit);
-    assert!(res_3.is_failure());
+    // but it gets back the money (i.e. looses less than 0.005 N)
+    assert!(rest < 5);
 
     // Checking created token account and metadata
-    let token_account_id: AccountId = format!("{}.{}", token_id, contract.id()).parse().unwrap();
+    let token_account_id: AccountId = format!("{}.{}", token_id, factory.id()).parse().unwrap();
     let token_metadata: FungibleTokenMetadata = token_owner_account
         .view(&token_account_id, "ft_metadata")
         .args_json(json!({}))
