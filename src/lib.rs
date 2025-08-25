@@ -3,6 +3,8 @@ use near_sdk::store::LazyOption;
 use near_sdk::{near, Gas, NearToken};
 
 mod deploy;
+mod deploy_as_global_account_id;
+mod deploy_as_global_hash;
 mod manager;
 
 const NEAR_PER_STORAGE: NearToken = NearToken::from_yoctonear(10u128.pow(19)); // 10e19yⓃ

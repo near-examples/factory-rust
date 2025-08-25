@@ -1,21 +1,13 @@
-use near_sdk::serde::Serialize;
 use near_sdk::{env, log, near, AccountId, NearToken, Promise, PromiseError, PublicKey};
 
-use crate::{Contract, ContractExt, NEAR_PER_STORAGE, NO_DEPOSIT, TGAS};
-
-#[derive(Serialize)]
-#[serde(crate = "near_sdk::serde")]
-struct DonationInitArgs {
-    beneficiary: AccountId,
-}
+use crate::{Contract, ContractExt, NEAR_PER_STORAGE};
 
 #[near]
 impl Contract {
     #[payable]
-    pub fn deploy(
+    pub fn deploy_as_global_account_id(
         &mut self,
         name: String,
-        beneficiary: AccountId,
         public_key: Option<PublicKey>,
     ) -> Promise {
         // Assert the sub-account is valid
@@ -26,47 +18,42 @@ impl Contract {
             "Invalid subaccount"
         );
 
+        let code = self.code.clone().unwrap();
+
         // Assert enough tokens are attached to create the account and deploy the contract
         let attached = env::attached_deposit();
-
-        let code = self.code.clone().unwrap();
         let contract_bytes = code.len() as u128;
-        let contract_storage_cost = NEAR_PER_STORAGE.saturating_mul(contract_bytes);
+        let contract_deploying_cost = NEAR_PER_STORAGE
+            .saturating_mul(contract_bytes)
+            .saturating_mul(10); // The cost per byte of global contract code is set as 10x the storage staking cost per byte
+
         // Require a little more since storage cost is not exact
-        let minimum_needed = contract_storage_cost.saturating_add(NearToken::from_millinear(100));
+        // let minimum_needed = contract_deploying_cost.saturating_add(NearToken::from_millinear(100));
         assert!(
-            attached >= minimum_needed,
-            "Attach at least {minimum_needed} yⓃ"
+            attached >= contract_deploying_cost,
+            "Attach at least {contract_deploying_cost} yⓃ"
         );
 
-        let init_args = near_sdk::serde_json::to_vec(&DonationInitArgs { beneficiary }).unwrap();
+        let pk = public_key.unwrap_or(env::signer_account_pk());
 
-        let mut promise = Promise::new(subaccount.clone())
+        let promise = Promise::new(subaccount.clone())
             .create_account()
-            .transfer(attached)
-            .deploy_contract(code)
-            .function_call(
-                "init".to_owned(),
-                init_args,
-                NO_DEPOSIT,
-                TGAS.saturating_mul(5),
-            );
-
-        // Add full access key is the user passes one
-        if let Some(pk) = public_key {
-            promise = promise.add_full_access_key(pk);
-        }
+            .transfer(env::attached_deposit())
+            .add_full_access_key(pk)
+            .deploy_global_contract_by_account_id(code);
 
         // Add callback
-        promise.then(Self::ext(env::current_account_id()).deploy_callback(
-            subaccount,
-            env::predecessor_account_id(),
-            attached,
-        ))
+        promise.then(
+            Self::ext(env::current_account_id()).deploy_as_global_account_id_callback(
+                subaccount,
+                env::predecessor_account_id(),
+                attached,
+            ),
+        )
     }
 
     #[private]
-    pub fn deploy_callback(
+    pub fn deploy_as_global_account_id_callback(
         &mut self,
         account: AccountId,
         user: AccountId,
