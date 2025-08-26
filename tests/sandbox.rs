@@ -5,7 +5,7 @@ const TEN_NEAR: NearToken = NearToken::from_near(10);
 
 #[tokio::test]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let sandbox = near_workspaces::sandbox().await?;
+    let sandbox = near_workspaces::sandbox_with_version("2.7.0").await?;
     let root = sandbox.root_account()?;
 
     // Create accounts
@@ -15,15 +15,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let contract_wasm = near_workspaces::compile_project("./").await?;
     let contract = sandbox.dev_deploy(&contract_wasm).await?;
 
+    let res_0 = alice.view(contract.id(), "get_code").args_json({}).await?;
+
+    println!("{:?}", res_0);
+
     // Launch new donation contract through factory
     let res = alice
-        .call(contract.id(), "create_factory_subaccount_and_deploy")
+        .call(contract.id(), "deploy")
         .args_json(json!({"name": "donation_for_alice", "beneficiary": alice.id()}))
         .max_gas()
         .deposit(NearToken::from_millinear(1700))
         .transact()
         .await?;
 
+    println!("{:?}", res);
     assert!(res.is_success());
 
     let sub_accountid: AccountId = format!("donation_for_alice.{}", contract.id())
@@ -49,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Try to create new donation contract with insufficient deposit
     let res = alice
-        .call(contract.id(), "create_factory_subaccount_and_deploy")
+        .call(contract.id(), "deploy")
         .args_json(json!({"name": "donation_for_alice_2", "beneficiary": alice.id()}))
         .max_gas()
         .deposit(NearToken::from_millinear(1500))
