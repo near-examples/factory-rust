@@ -1,31 +1,207 @@
-// Find all our documentation at https://docs.near.org
-use near_sdk::store::LazyOption;
-use near_sdk::{near, Gas, NearToken};
+use near_sdk::json_types::Base58CryptoHash;
+use near_sdk::{env, ext_contract, near, AccountId, CryptoHash, Promise, PromiseError};
 
-mod deploy;
-mod manager;
+const DEFAULT_CONTRACT: &[u8] = include_bytes!("./status-message-contract/status_message.wasm");
 
-const NEAR_PER_STORAGE: NearToken = NearToken::from_yoctonear(10u128.pow(19)); // 10e19yⓃ
-const DEFAULT_CONTRACT: &[u8] = include_bytes!("./donation-contract/donation.wasm");
-const TGAS: Gas = Gas::from_tgas(1);
-const NO_DEPOSIT: NearToken = NearToken::from_near(0); // 0yⓃ
-
-// Define the contract structure
+#[derive(Default)]
 #[near(contract_state)]
-pub struct Contract {
-    // Since a contract is something big to store, we use LazyOptions
-    // this way it is not deserialized on each method call
-    code: LazyOption<Vec<u8>>,
-    // Please note that it is much more efficient to **not** store this
-    // code in the state, and directly use `DEFAULT_CONTRACT`
+pub struct GlobalFactoryContract {
     // However, this does not enable to update the stored code.
+    /// Store the hash of deployed global contracts for reference
+    pub deployed_global_contracts: std::collections::HashMap<String, CryptoHash>,
+    /// Store account IDs that have deployed global contracts
+    pub global_contract_deployers: std::collections::HashMap<String, AccountId>,
 }
 
-// Define the default, which automatically initializes the contract
-impl Default for Contract {
-    fn default() -> Self {
-        Self {
-            code: LazyOption::new("code".as_bytes(), Some(DEFAULT_CONTRACT.to_vec())),
+// Example contract interface that we'll deploy as a global contract
+#[ext_contract]
+pub trait ExtStatusMessage {
+    fn set_status(&mut self, message: String);
+    fn get_status(&self, account_id: AccountId) -> Option<String>;
+}
+
+#[near]
+impl GlobalFactoryContract {
+    /// Deploy a global contract with the given bytecode, identifiable by its code hash
+    #[payable]
+    pub fn deploy_global_contract(&mut self, name: String) -> Promise {
+        // Assert the sub-account is valid
+        let current_account = env::current_account_id().to_string();
+        let subaccount: AccountId = format!("{name}.{current_account}").parse().unwrap();
+        assert!(
+            env::is_valid_account_id(subaccount.as_bytes()),
+            "Invalid subaccount"
+        );
+
+        // Store the code hash for later reference
+        let code_bytes: Vec<u8> = DEFAULT_CONTRACT.to_vec();
+        let code_hash_vec = env::sha256(&code_bytes);
+        let code_hash: CryptoHash = code_hash_vec.try_into().unwrap();
+        self.deployed_global_contracts
+            .insert(name.clone(), code_hash);
+        self.global_contract_deployers
+            .insert(name, subaccount.clone());
+
+        Promise::new(subaccount)
+            .create_account()
+            .transfer(env::attached_deposit())
+            .add_full_access_key(env::signer_account_pk())
+            .deploy_global_contract(code_bytes)
+    }
+
+    /// Deploy a global contract, identifiable by the predecessor's account ID
+    #[payable]
+    pub fn deploy_global_contract_by_account_id(&mut self, name: String) -> Promise {
+        // Assert the sub-account is valid
+        let current_account = env::current_account_id().to_string();
+        let subaccount: AccountId = format!("{name}.{current_account}").parse().unwrap();
+        assert!(
+            env::is_valid_account_id(subaccount.as_bytes()),
+            "Invalid subaccount"
+        );
+
+        // Store reference to this deployment
+        let code_bytes: Vec<u8> = DEFAULT_CONTRACT.to_vec();
+        let code_hash_vec = env::sha256(&code_bytes);
+        let code_hash: CryptoHash = code_hash_vec.try_into().unwrap();
+        self.deployed_global_contracts
+            .insert(name.clone(), code_hash);
+        self.global_contract_deployers
+            .insert(name, subaccount.clone());
+
+        Promise::new(subaccount)
+            .create_account()
+            .transfer(env::attached_deposit())
+            .add_full_access_key(env::signer_account_pk())
+            .deploy_global_contract_by_account_id(code_bytes)
+    }
+
+    /// Use an existing global contract by its code hash
+    pub fn use_global_contract_by_hash(
+        &self,
+        code_hash: Base58CryptoHash,
+        account_id: AccountId,
+    ) -> Promise {
+        Promise::new(account_id)
+            .create_account()
+            .transfer(env::attached_deposit())
+            .add_full_access_key(env::signer_account_pk())
+            .use_global_contract(CryptoHash::from(code_hash).to_vec())
+    }
+
+    /// Use an existing global contract by referencing the account that deployed it
+    pub fn use_global_contract_by_account(
+        &self,
+        deployer_account_id: AccountId,
+        account_id: AccountId,
+    ) -> Promise {
+        Promise::new(account_id)
+            .create_account()
+            .transfer(env::attached_deposit())
+            .add_full_access_key(env::signer_account_pk())
+            .use_global_contract_by_account_id(deployer_account_id)
+    }
+
+    /// Get the code hash of a deployed global contract by name
+    pub fn get_global_contract_hash(&self, name: String) -> Option<Base58CryptoHash> {
+        self.deployed_global_contracts
+            .get(&name)
+            .cloned()
+            .map(|hash| hash.into())
+    }
+
+    /// Get the deployer account ID of a global contract by name
+    pub fn get_global_contract_deployer(&self, name: String) -> Option<AccountId> {
+        self.global_contract_deployers.get(&name).cloned()
+    }
+
+    /// List all deployed global contracts
+    pub fn list_global_contracts(&self) -> Vec<(String, Base58CryptoHash, AccountId)> {
+        self.deployed_global_contracts
+            .iter()
+            .map(|(name, hash)| {
+                let deployer = self
+                    .global_contract_deployers
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| "unknown".parse().unwrap());
+                (name.clone(), (*hash).into(), deployer)
+            })
+            .collect()
+    }
+
+    /// Example of calling a status message contract that was deployed as global
+    pub fn call_global_status_contract(&mut self, account_id: AccountId, message: String) {
+        ext_status_message::ext(account_id).set_status(message);
+    }
+
+    /// Example of complex call using global contracts
+    pub fn complex_global_call(&mut self, account_id: AccountId, message: String) -> Promise {
+        // 1) call global status_message to record a message from the signer.
+        // 2) call global status_message to retrieve the message of the signer.
+        // 3) return that message as its own result.
+        ext_status_message::ext(account_id.clone())
+            .set_status(message)
+            .then(Self::ext(env::current_account_id()).get_result(account_id))
+    }
+
+    #[handle_result]
+    pub fn get_result(
+        &self,
+        account_id: AccountId,
+        #[callback_result] set_status_result: Result<(), PromiseError>,
+    ) -> Result<Promise, &'static str> {
+        match set_status_result {
+            Ok(_) => Ok(ext_status_message::ext(account_id).get_status(env::signer_account_id())),
+            Err(_) => Err("Failed to set status"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
+    use near_sdk::{testing_env, AccountId};
+
+    fn get_context(predecessor_account_id: AccountId) -> near_sdk::VMContext {
+        VMContextBuilder::new()
+            .current_account_id(accounts(0))
+            .signer_account_id(predecessor_account_id.clone())
+            .predecessor_account_id(predecessor_account_id)
+            .build()
+    }
+
+    #[test]
+    fn test_deploy_global_contract() {
+        let context = get_context(accounts(1));
+        testing_env!(context);
+
+        let mut contract = GlobalFactoryContract::default();
+
+        contract.deploy_global_contract("test_contract".to_string());
+
+        // Check that the contract was recorded
+        let stored_hash = contract.get_global_contract_hash("test_contract".to_string());
+        assert!(stored_hash.is_some());
+
+        let expected_hash_vec = near_sdk::env::sha256(&DEFAULT_CONTRACT.to_vec());
+        let expected_hash: CryptoHash = expected_hash_vec.try_into().unwrap();
+        assert_eq!(stored_hash.unwrap(), expected_hash.into());
+    }
+
+    #[test]
+    fn test_list_global_contracts() {
+        let context = get_context(accounts(1));
+        testing_env!(context);
+
+        let mut contract = GlobalFactoryContract::default();
+
+        contract.deploy_global_contract("test_contract".to_string());
+
+        let contracts = contract.list_global_contracts();
+        assert_eq!(contracts.len(), 1);
+        assert_eq!(contracts[0].0, "test_contract");
+        assert_eq!(contracts[0].2, format!("test_contract.{}", accounts(0)));
     }
 }
