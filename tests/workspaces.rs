@@ -13,7 +13,7 @@ async fn test_manager() -> anyhow::Result<()> {
 
     let change_contract_id_res_1 = factory_contract
         .call("update_global_contract_id")
-        .args_json((DEFAULT_GLOBAL_CONTRACT_HASH.to_string(), true))
+        .args_json((DEFAULT_GLOBAL_CONTRACT_HASH.to_string(),))
         .max_gas()
         .transact()
         .await?;
@@ -31,7 +31,7 @@ async fn test_manager() -> anyhow::Result<()> {
 
     let change_contract_id_res_2 = factory_contract
         .call("update_global_contract_id")
-        .args_json((DEFAULT_GLOBAL_CONTRACT_ACCOUNT_ID.to_string(), false))
+        .args_json((DEFAULT_GLOBAL_CONTRACT_ACCOUNT_ID.to_string(),))
         .max_gas()
         .transact()
         .await?;
@@ -58,7 +58,7 @@ async fn test_global_contract_edge_cases() -> anyhow::Result<()> {
 
     let change_contract_id_res = factory_contract
         .call("update_global_contract_id")
-        .args_json(("11111111111111111111111111111111".to_string(), true))
+        .args_json(("11111111111111111111111111111111".to_string(),))
         .max_gas()
         .transact()
         .await?;

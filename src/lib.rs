@@ -20,6 +20,16 @@ impl ToString for GlobalContractId {
     }
 }
 
+impl From<String> for GlobalContractId {
+    fn from(s: String) -> Self {
+        if s.parse::<AccountId>().is_ok() {
+            GlobalContractId::AccountId(s.parse().unwrap())
+        } else {
+            GlobalContractId::CodeHash(s)
+        }
+    }
+}
+
 #[near(contract_state)]
 pub struct GlobalFactoryContract {
     pub global_contract_id: GlobalContractId,
