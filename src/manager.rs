@@ -14,7 +14,7 @@ impl GlobalFactoryContract {
         }
     }
 
-    pub fn get_global_contract_id(&self) -> GlobalContractId {
-        self.global_contract_id.clone()
+    pub fn get_global_contract_id(&self) -> String {
+        self.global_contract_id.to_string()
     }
 }
