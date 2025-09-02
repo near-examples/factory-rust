@@ -76,7 +76,7 @@ impl GlobalFactoryContract {
                     "Using global contract with code hash: {:?}",
                     code_hash
                 ));
-                promise.use_global_contract(code_hash.as_bytes().to_vec())
+                promise.use_global_contract(bs58::decode(code_hash).into_vec().unwrap())
             }
         }
     }

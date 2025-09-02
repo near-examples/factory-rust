@@ -8,6 +8,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 borsh = "1.5.7"
+bs58 = "0.5.1"
 near-sdk = { version = "5.17.1", features = ["global-contracts", "unstable"] }
 
 [dev-dependencies]
