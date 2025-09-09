@@ -5,17 +5,13 @@ use crate::{GlobalContractId, GlobalFactoryContract, GlobalFactoryContractExt};
 #[near]
 impl GlobalFactoryContract {
     #[private]
-    pub fn update_global_contract_id(&mut self, contract_id: String) {
-        self.global_contract_id = GlobalContractId::from(contract_id);
+    pub fn update_global_contract_id(&mut self, contract_id: GlobalContractId, min_deposit: NearToken) {
+        self.global_contract_id = contract_id;
+        self.min_deposit_amount = min_deposit;
     }
 
-    pub fn get_global_contract_id(&self) -> String {
-        self.global_contract_id.to_string()
-    }
-
-    #[private]
-    pub fn update_min_deposit(&mut self, amount: NearToken) {
-        self.min_deposit_amount = amount;
+    pub fn get_global_contract_id(&self) -> GlobalContractId {
+        self.global_contract_id.clone()
     }
 
     pub fn get_min_deposit(&self) -> NearToken {

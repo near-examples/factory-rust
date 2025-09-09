@@ -12,25 +12,6 @@ pub enum GlobalContractId {
     CodeHash(String),
 }
 
-impl ToString for GlobalContractId {
-    fn to_string(&self) -> String {
-        match self {
-            GlobalContractId::AccountId(account_id) => account_id.to_string(),
-            GlobalContractId::CodeHash(code_hash) => code_hash.clone(),
-        }
-    }
-}
-
-impl From<String> for GlobalContractId {
-    fn from(s: String) -> Self {
-        if s.parse::<AccountId>().is_ok() {
-            GlobalContractId::AccountId(s.parse().unwrap())
-        } else {
-            GlobalContractId::CodeHash(s)
-        }
-    }
-}
-
 #[near(contract_state)]
 pub struct GlobalFactoryContract {
     pub global_contract_id: GlobalContractId,
@@ -73,6 +54,7 @@ impl GlobalFactoryContract {
             .create_account()
             .transfer(env::attached_deposit())
             .add_full_access_key(env::signer_account_pk());
+
         match self.global_contract_id {
             GlobalContractId::AccountId(ref account_id) => {
                 env::log_str(&format!(

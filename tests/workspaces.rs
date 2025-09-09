@@ -1,8 +1,11 @@
-use near_sdk::NearToken;
+use factory_contract_global::GlobalContractId;
+use near_sdk::{serde_json::json, NearToken};
 
 const DEFAULT_GLOBAL_CONTRACT_ACCOUNT_ID: &str = "ft.globals.primitives.testnet";
-const DEFAULT_GLOBAL_CONTRACT_HASH: &str = "3vaopJ7aRoivvzZLngPQRBEd8VJr2zPLTxQfnRCoFgNX";
-const DEFAULT_DEPOSIT_AMOUNT: u128 = 100; // 0.1 NEAR
+
+const TEST_GLOBAL_CONTRACT_ACCOUNT_ID: &str = "ft.globals.primitives.testnet";
+const TEST_GLOBAL_CONTRACT_HASH: &str = "3vaopJ7aRoivvzZLngPQRBEd8VJr2zPLTxQfnRCoFgNX";
+const TEST_DEPOSIT_AMOUNT: u128 = 100; // 0.1 NEAR
 
 /// TODO: add tests for deploy method as soon as near-workspaces-rs supports deploying global contracts.
 /// Currently it does not, therefore it's impossible to deploy global contract to use it in tests.
@@ -14,9 +17,23 @@ async fn test_manager() -> anyhow::Result<()> {
     let factory_wasm = near_workspaces::compile_project(".").await?;
     let factory_contract = worker.dev_deploy(&factory_wasm).await?;
 
+    let default_contract_id = factory_contract
+        .call("get_global_contract_id")
+        .view()
+        .await?
+        .json::<Option<GlobalContractId>>()?
+        .expect("Should have stored global contract ID");
+    assert_eq!(
+        default_contract_id,
+        GlobalContractId::AccountId(DEFAULT_GLOBAL_CONTRACT_ACCOUNT_ID.parse().unwrap())
+    );
+
     let change_contract_id_res_1 = factory_contract
         .call("update_global_contract_id")
-        .args_json((DEFAULT_GLOBAL_CONTRACT_HASH.to_string(),))
+        .args_json(json!({
+          "contract_id": GlobalContractId::CodeHash(TEST_GLOBAL_CONTRACT_HASH.to_string()),
+          "min_deposit": NearToken::from_millinear(TEST_DEPOSIT_AMOUNT) 
+        }))
         .max_gas()
         .transact()
         .await?;
@@ -24,16 +41,21 @@ async fn test_manager() -> anyhow::Result<()> {
 
     let global_contract_id = factory_contract
         .call("get_global_contract_id")
-        .args_json(())
         .view()
         .await?
-        .json::<Option<String>>()?
+        .json::<Option<GlobalContractId>>()?
         .expect("Should have stored global contract ID");
-    assert_eq!(global_contract_id, DEFAULT_GLOBAL_CONTRACT_HASH);
+    assert_eq!(
+        global_contract_id,
+        GlobalContractId::CodeHash(TEST_GLOBAL_CONTRACT_HASH.to_string())
+    );
 
     let change_contract_id_res_2 = factory_contract
         .call("update_global_contract_id")
-        .args_json((DEFAULT_GLOBAL_CONTRACT_ACCOUNT_ID.to_string(),))
+        .args_json(json!({
+              "contract_id": GlobalContractId::AccountId(TEST_GLOBAL_CONTRACT_ACCOUNT_ID.parse().unwrap()),
+              "min_deposit": NearToken::from_millinear(TEST_DEPOSIT_AMOUNT)
+        }))
         .max_gas()
         .transact()
         .await?;
@@ -41,20 +63,14 @@ async fn test_manager() -> anyhow::Result<()> {
 
     let global_contract_id = factory_contract
         .call("get_global_contract_id")
-        .args_json(())
         .view()
         .await?
-        .json::<Option<String>>()?
+        .json::<Option<GlobalContractId>>()?
         .expect("Should have stored global contract ID");
-    assert_eq!(global_contract_id, DEFAULT_GLOBAL_CONTRACT_ACCOUNT_ID);
-
-    let change_min_deposit_res = factory_contract
-        .call("update_min_deposit")
-        .args_json((NearToken::from_millinear(100),))
-        .max_gas()
-        .transact()
-        .await?;
-    assert!(change_min_deposit_res.is_success());
+    assert_eq!(
+        global_contract_id,
+        GlobalContractId::AccountId(TEST_GLOBAL_CONTRACT_ACCOUNT_ID.parse().unwrap())
+    );
 
     let min_deposit = factory_contract
         .call("get_min_deposit")
@@ -63,7 +79,7 @@ async fn test_manager() -> anyhow::Result<()> {
         .await?
         .json::<Option<NearToken>>()?
         .expect("Should have stored global contract ID");
-    assert!(min_deposit.eq(&NearToken::from_millinear(DEFAULT_DEPOSIT_AMOUNT)));
+    assert!(min_deposit.eq(&NearToken::from_millinear(TEST_DEPOSIT_AMOUNT)));
     Ok(())
 }
 
@@ -76,7 +92,11 @@ async fn test_global_contract_edge_cases() -> anyhow::Result<()> {
 
     let change_contract_id_res = factory_contract
         .call("update_global_contract_id")
-        .args_json(("11111111111111111111111111111111".to_string(),))
+        .args_json(
+                    json!({
+            "contract_id": GlobalContractId::CodeHash("11111111111111111111111111111111".to_string()),
+            "min_deposit": NearToken::from_millinear(TEST_DEPOSIT_AMOUNT) }
+        ))
         .max_gas()
         .transact()
         .await?;
