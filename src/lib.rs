@@ -1,31 +1,76 @@
-// Find all our documentation at https://docs.near.org
-use near_sdk::store::LazyOption;
-use near_sdk::{near, Gas, NearToken};
+use near_sdk::{env, near, AccountId, NearToken, Promise};
 
-mod deploy;
 mod manager;
 
-const NEAR_PER_STORAGE: NearToken = NearToken::from_yoctonear(10u128.pow(19)); // 10e19yⓃ
-const DEFAULT_CONTRACT: &[u8] = include_bytes!("./donation-contract/donation.wasm");
-const TGAS: Gas = Gas::from_tgas(1);
-const NO_DEPOSIT: NearToken = NearToken::from_near(0); // 0yⓃ
+const DEFAULT_GLOBAL_CONTRACT_ID: &str = "ft.globals.primitives.testnet";
+const DEFAULT_DEPOSIT_AMOUNT: u128 = 200; // 0.2 NEAR
 
-// Define the contract structure
-#[near(contract_state)]
-pub struct Contract {
-    // Since a contract is something big to store, we use LazyOptions
-    // this way it is not deserialized on each method call
-    code: LazyOption<Vec<u8>>,
-    // Please note that it is much more efficient to **not** store this
-    // code in the state, and directly use `DEFAULT_CONTRACT`
-    // However, this does not enable to update the stored code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[near(serializers = [borsh, json])]
+pub enum GlobalContractId {
+    AccountId(AccountId),
+    CodeHash(String),
 }
 
-// Define the default, which automatically initializes the contract
-impl Default for Contract {
+#[near(contract_state)]
+pub struct GlobalFactoryContract {
+    pub global_contract_id: GlobalContractId,
+    pub min_deposit_amount: NearToken,
+}
+
+impl Default for GlobalFactoryContract {
     fn default() -> Self {
         Self {
-            code: LazyOption::new("code".as_bytes(), Some(DEFAULT_CONTRACT.to_vec())),
+            global_contract_id: GlobalContractId::AccountId(
+                DEFAULT_GLOBAL_CONTRACT_ID.parse().unwrap(),
+            ),
+            min_deposit_amount: NearToken::from_millinear(DEFAULT_DEPOSIT_AMOUNT), // 0.2 NEAR
+        }
+    }
+}
+
+#[near]
+impl GlobalFactoryContract {
+    /// Deploy a global contract with the given bytecode, identifiable by its code hash
+    #[payable]
+    pub fn deploy(&mut self, name: String) -> Promise {
+        // Assert enough tokens are attached to cover minimal initial deposit on created account
+        let attached = env::attached_deposit();
+        let minimum_needed = self.min_deposit_amount.exact_amount_display();
+        assert!(
+            attached.ge(&self.min_deposit_amount),
+            "Attach at least {minimum_needed}"
+        );
+
+        // Assert the sub-account is valid
+        let current_account = env::current_account_id().to_string();
+        let subaccount: AccountId = format!("{name}.{current_account}").parse().unwrap();
+        assert!(
+            env::is_valid_account_id(subaccount.as_bytes()),
+            "Invalid subaccount"
+        );
+
+        let promise = Promise::new(subaccount)
+            .create_account()
+            .transfer(env::attached_deposit())
+            .add_full_access_key(env::signer_account_pk());
+
+        match self.global_contract_id {
+            GlobalContractId::AccountId(ref account_id) => {
+                env::log_str(&format!(
+                    "Using global contract deployed by account: {}",
+                    account_id
+                ));
+
+                promise.use_global_contract_by_account_id(account_id.clone())
+            }
+            GlobalContractId::CodeHash(ref code_hash) => {
+                env::log_str(&format!(
+                    "Using global contract with code hash: {:?}",
+                    code_hash
+                ));
+                promise.use_global_contract(bs58::decode(code_hash).into_vec().unwrap())
+            }
         }
     }
 }

@@ -1,198 +1,77 @@
-# Factory Contract Example
+# Factory Contract with Global Contracts Example
 
-A factory is a smart contract that stores a compiled contract on itself, and
-automatizes deploying it into sub-accounts.
+This example demonstrates how to use NEAR's global contract functionality to deploy and use global smart contracts.
 
-This particular example presents a factory of donation contracts, and enables
-to:
+Global contracts allow sharing contract code globally across the NEAR network, reducing deployment costs and enabling efficient code reuse.
 
-1. Create a sub-account of the factory and deploy the stored contract on it
-   (create_factory_subaccount_and_deploy).
-2. Change the stored contract using the update_stored_contract method.
+## Key Features
 
-```rust
-#[payable]
-    pub fn create_factory_subaccount_and_deploy(
-        &mut self,
-        name: String,
-        beneficiary: AccountId,
-        public_key: Option<PublicKey>,
-    ) -> Promise {
-        // Assert the sub-account is valid
-        let current_account = env::current_account_id().to_string();
-        let subaccount: AccountId = format!("{name}.{current_account}").parse().unwrap();
-        assert!(
-            env::is_valid_account_id(subaccount.as_bytes()),
-            "Invalid subaccount"
-        );
+- Deploy a global contract using `deploy_global_contract()`
+- Use an existing global contract by hash with `use_global_contract()`
+- Use an existing global contract by deployer account with `use_global_contract_by_account_id()`
+- Integration tests using near-workspaces
 
-        // Assert enough tokens are attached to create the account and deploy the contract
-        let attached = env::attached_deposit();
+## Install `cargo-near` build tool
 
-        let code = self.code.clone().unwrap();
-        let contract_bytes = code.len() as u128;
-        let minimum_needed = NEAR_PER_STORAGE.saturating_mul(contract_bytes);
-        assert!(
-            attached >= minimum_needed,
-            "Attach at least {minimum_needed} yⓃ"
-        );
+See [`cargo-near` installation](https://github.com/near/cargo-near#installation)
 
-        let init_args = near_sdk::serde_json::to_vec(&DonationInitArgs { beneficiary }).unwrap();
-
-        let mut promise = Promise::new(subaccount.clone())
-            .create_account()
-            .transfer(attached)
-            .deploy_contract(code)
-            .function_call(
-                "init".to_owned(),
-                init_args,
-                NO_DEPOSIT,
-                TGAS.saturating_mul(5),
-            );
-
-        // Add full access key is the user passes one
-        if let Some(pk) = public_key {
-            promise = promise.add_full_access_key(pk);
-        }
-
-        // Add callback
-        promise.then(
-            Self::ext(env::current_account_id()).create_factory_subaccount_and_deploy_callback(
-                subaccount,
-                env::predecessor_account_id(),
-                attached,
-            ),
-        )
-    }
-```
-
-## How to Build Locally?
-
-Install [`cargo-near`](https://github.com/near/cargo-near) and run:
+## Build with:
 
 ```bash
 cargo near build
 ```
 
-## How to Test Locally?
+## Run Tests:
 
+### Unit Tests
 ```bash
 cargo test
 ```
 
-## How to Deploy?
+### Integration Tests
+```bash
+cargo test --test workspaces
+cargo test --test realistic
+```
 
-Deployment is automated with GitHub Actions CI/CD pipeline. To deploy manually,
-install [`cargo-near`](https://github.com/near/cargo-near) and run:
+## Create testnet dev-account:
 
 ```bash
-cargo near deploy <account-id>
+cargo near create-dev-account
 ```
 
-## How to Interact?
-
-_In this example we will be using [NEAR CLI](https://github.com/near/near-cli)
-to intract with the NEAR blockchain and the smart contract_
-
-_If you want full control over of your interactions we recommend using the
-[near-cli-rs](https://near.cli.rs)._
-
-### Deploy the Stored Contract Into a Sub-Account
-
-`create_factory_subaccount_and_deploy` will create a sub-account of the factory
-and deploy the stored contract on it.
+## Deploy to dev-account:
 
 ```bash
-near call <factory-account> create_factory_subaccount_and_deploy '{ "name": "sub", "beneficiary": "<account-to-be-beneficiary>"}' --deposit 1.24 --accountId <account-id> --gas 300000000000000
+cargo near deploy
 ```
 
-This will create the `sub.<factory-account>`, which will have a `donation`
-contract deployed on it:
+## How Global Contracts Work
 
-```bash
-near view sub.<factory-account> get_beneficiary
-# expected response is: <account-to-be-beneficiary>
-```
+1. **Deploy Global Contract**: A contract deploys bytecode as a global contract, making it available network-wide
+2. **Use by Hash**: Other contracts can reference the global contract by its code hash
+3. **Use by Account**: Contracts can reference a global contract by the account that deployed it
 
-### Update the Stored Contract
+This reduces storage costs and enables code sharing across the ecosystem.
 
-`update_stored_contract` enables to change the compiled contract that the
-factory stores.
+## Use Cases from NEP-591
 
-The method is interesting because it has no declared parameters, and yet it
-takes an input: the new contract to store as a stream of bytes.
+- **Multisig Contracts**: Deploy once, use for many wallets without paying 3N each time
+- **Smart Contract Wallets**: Efficient user onboarding with chain signatures
+- **Business Onboarding**: Companies can deploy user accounts cost-effectively
+- **DeFi Templates**: Share common contract patterns across protocols
 
-To use it, we need to transform the contract we want to store into its `base64`
-representation, and pass the result as input to the method:
+## Runtime Requirements
 
-```bash
-# Use near-cli to update stored contract
-export BYTES=`cat ./src/to/new-contract/contract.wasm | base64`
-near call <factory-account> update_stored_contract "$BYTES" --base64 --accountId <factory-account> --gas 30000000000000
-```
+⚠️ **Important**: Global contracts are not yet available in released versions of nearcore.
 
-> This works because the arguments of a call can be either a `JSON` object or a
-> `String Buffer`
+- **Current Status**: Global contract host functions are implemented in nearcore but will first be available in version 2.7.0
+- **SDK Status**: This near-sdk-rs implementation is ready and waiting for runtime support
+- **Testing**: Integration tests require a custom nearcore build with global contract support
 
-## Factories - Explanations & Limitations
+### When Available
 
-Factories are an interesting concept, here we further explain some of their
-implementation aspects, as well as their limitations.
-
-<br>
-
-### Automatically Creating Accounts
-
-NEAR accounts can only create sub-accounts of themselves, therefore, the
-`factory` can only create and deploy contracts on its own sub-accounts.
-
-This means that the factory:
-
-1. **Can** create `sub.factory.testnet` and deploy a contract on it.
-2. **Cannot** create sub-accounts of the `predecessor`.
-3. **Can** create new accounts (e.g. `account.testnet`), but **cannot** deploy
-   contracts on them.
-
-It is important to remember that, while `factory.testnet` can create
-`sub.factory.testnet`, it has no control over it after its creation.
-
-### The Update Method
-
-The `update_stored_contracts` has a very short implementation:
-
-```rust
-#[private]
-    pub fn update_stored_contract(&mut self) {
-        self.code.set(env::input());
-    }
-```
-
-On first sight it looks like the method takes no input parameters, but we can
-see that its only line of code reads from `env::input()`. What is happening here
-is that `update_stored_contract` **bypasses** the step of **deserializing the
-input**.
-
-You could implement `update_stored_contract(&mut self, new_code: Vec<u8>)`,
-which takes the compiled code to store as a `Vec<u8>`, but that would trigger
-the contract to:
-
-1. Deserialize the `new_code` variable from the input.
-2. Sanitize it, making sure it is correctly built.
-
-When dealing with big streams of input data (as is the compiled `wasm` file to
-be stored), this process of deserializing/checking the input ends up **consuming
-the whole GAS** for the transaction.
-
-## Useful Links
-
-- [cargo-near](https://github.com/near/cargo-near) - NEAR smart contract
-  development toolkit for Rust
-- [near CLI-rs](https://near.cli.rs) - Iteract with NEAR blockchain from command
-  line
-- [NEAR Rust SDK Documentation](https://docs.near.org/sdk/rust/introduction)
-- [NEAR Documentation](https://docs.near.org)
-- [NEAR StackOverflow](https://stackoverflow.com/questions/tagged/nearprotocol)
-- [NEAR Discord](https://near.chat)
-- [NEAR Telegram Developers Community Group](https://t.me/neardev)
-- NEAR DevHub: [Telegram](https://t.me/neardevhub),
-  [Twitter](https://twitter.com/neardevhub)
+Once nearcore 2.7.0 is released, you'll be able to:
+- Deploy global contracts on mainnet and testnet
+- Run integration tests with near-workspaces using version "2.7.0" or later
+- Use all the functionality demonstrated in this example
