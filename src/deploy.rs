@@ -1,11 +1,21 @@
 use near_contract_standards::fungible_token::metadata::FungibleTokenMetadata;
-use near_sdk::{borsh, env, json_types::U128, log, near, require, serde_json::json, AccountId, NearToken, Promise, PromiseError};
+use near_sdk::{
+    borsh, env, json_types::U128, log, near, require, serde_json::json, AccountId, NearToken,
+    Promise, PromiseError,
+};
 
-use crate::{Contract, ContractExt, FT_CONTRACT, NO_DEPOSIT, TGAS};
+use crate::{Contract, ContractExt, NO_DEPOSIT, TGAS};
 
 type TokenId = String;
 
-const EXTRA_BYTES: usize = 10000;
+// Storage layout of near-examples/FT published at ft.globals.primitives.*:
+// account: 100; STATE record: 79; metadata record: 41 + metadata bytes;
+// owner balance record: 61 + owner ID bytes. TokenArgs already includes the
+// metadata, owner ID, its 4-byte length, and a 16-byte total supply, so add
+// 100 + 79 + 41 + 61 - 4 - 16 = 261 bytes, plus the global reference.
+// Revisit this layout if the configured global FT implementation changes.
+const FT_STORAGE_OVERHEAD: usize = 261;
+const ZERO_BALANCE_STORAGE_LIMIT: usize = 770;
 
 #[near(serializers = [json, borsh])]
 pub struct TokenArgs {
@@ -27,11 +37,16 @@ pub fn is_valid_token_id(token_id: &TokenId) -> bool {
 #[near]
 impl Contract {
     pub fn get_required(&self, args: &TokenArgs) -> NearToken {
-        env::storage_byte_cost().saturating_mul(
-            (FT_CONTRACT.len() + EXTRA_BYTES + borsh::to_vec(args).unwrap().len())
-                .try_into()
-                .unwrap(),
-        )
+        let storage_bytes = self.global_contract_id.as_bytes().len()
+            + FT_STORAGE_OVERHEAD
+            + borsh::to_vec(args).unwrap().len();
+        // NEAR exempts accounts using at most 770 bytes. Above that limit,
+        // the whole storage footprint must be funded, not just the excess.
+        if storage_bytes <= ZERO_BALANCE_STORAGE_LIMIT {
+            NO_DEPOSIT
+        } else {
+            env::storage_byte_cost().saturating_mul(storage_bytes.try_into().unwrap())
+        }
     }
 
     #[payable]
@@ -68,7 +83,7 @@ impl Contract {
         Promise::new(token_account_id.parse().unwrap())
             .create_account()
             .transfer(attached)
-            .deploy_contract(FT_CONTRACT.to_vec())
+            .use_global_contract_by_account_id(self.global_contract_id.clone())
             .function_call(
                 "new".to_owned(),
                 init_args,
@@ -94,7 +109,7 @@ impl Contract {
             Ok(_) => true,
             Err(e) => {
                 log!("Error creating token: {:?}", e);
-                Promise::new(user).transfer(deposit);
+                Promise::new(user).transfer(deposit).detach();
                 false
             }
         }

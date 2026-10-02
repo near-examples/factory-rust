@@ -1,19 +1,24 @@
 // Find all our documentation at https://docs.near.org
-use near_sdk::{near, Gas, NearToken};
+use near_sdk::{near, AccountId, Gas, NearToken, PanicOnDefault};
 
 mod deploy;
 
-const FT_CONTRACT: &[u8] = include_bytes!("./ft-contract/ft.wasm");
 const TGAS: Gas = Gas::from_tgas(1); // 10e12yⓃ
 const NO_DEPOSIT: NearToken = NearToken::from_near(0); // 0yⓃ
 
 // Define the contract structure
 #[near(contract_state)]
-pub struct Contract {}
+#[derive(PanicOnDefault)]
+pub struct Contract {
+    pub global_contract_id: AccountId,
+}
 
-// Define the default, which automatically initializes the contract
-impl Default for Contract {
-    fn default() -> Self {
-        Self {}
+#[near]
+impl Contract {
+    /// Initialize with `ft.globals.primitives.near` on mainnet or
+    /// `ft.globals.primitives.testnet` on testnet.
+    #[init]
+    pub fn new(global_contract_id: AccountId) -> Self {
+        Self { global_contract_id }
     }
 }

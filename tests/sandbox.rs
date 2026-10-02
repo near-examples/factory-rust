@@ -1,7 +1,19 @@
+use near_api::{
+    types::account::ContractState, Account, AccountId, Contract, NearGas, NearToken, NetworkConfig,
+    Signer,
+};
 use near_contract_standards::fungible_token::metadata::FungibleTokenMetadata;
-use near_sdk::{json_types::U128, near};
-use near_workspaces::{types::NearToken, Account, AccountId, Contract};
+use near_sdk::{
+    base64::{engine::general_purpose::STANDARD, Engine},
+    json_types::U128,
+    near,
+};
 use serde_json::json;
+use std::sync::{Arc, OnceLock};
+use testresult::{TestError, TestResult};
+
+const PUBLISHED_FT: &str = "ft.globals.primitives.near";
+const SANDBOX_FT: &str = "global.sandbox";
 
 #[near(serializers = [json, borsh])]
 struct TokenArgs {
@@ -10,227 +22,377 @@ struct TokenArgs {
     metadata: FungibleTokenMetadata,
 }
 
-#[tokio::test]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let sandbox = near_workspaces::sandbox().await?;
-    let contract_wasm = near_workspaces::compile_project("./").await?;
-    let contract = sandbox.dev_deploy(&contract_wasm).await?;
-    let root = sandbox.root_account().unwrap();
+struct TestContext {
+    _sandbox: near_sandbox::Sandbox,
+    network: NetworkConfig,
+    signer: Arc<Signer>,
+    factory: Contract,
+    global_contract_id: AccountId,
+    owner: Account,
+    alice: Account,
+    bob: Account,
+}
 
-    let token_owner_account = root
-        .create_subaccount("the-token-owner-account-1234567890123456789")
-        .initial_balance(NearToken::from_near(5))
-        .transact()
+fn factory_wasm() -> &'static Vec<u8> {
+    static WASM: OnceLock<Vec<u8>> = OnceLock::new();
+    WASM.get_or_init(|| {
+        let path = cargo_near_build::build_with_cli(Default::default()).expect("Build factory");
+        std::fs::read(path).expect("Read factory WASM")
+    })
+}
+
+async fn published_ft_wasm() -> TestResult<&'static Vec<u8>> {
+    static WASM: tokio::sync::OnceCell<Vec<u8>> = tokio::sync::OnceCell::const_new();
+    WASM.get_or_try_init(|| async {
+        // Fetch the actual published FT implementation; no local FT project or WASM is needed.
+        let code = Contract::global_wasm()
+            .by_account_id(PUBLISHED_FT.parse()?)
+            .fetch_from_mainnet()
+            .await?
+            .data;
+        Ok::<_, TestError>(STANDARD.decode(code.code_base64)?)
+    })
+    .await
+}
+
+async fn setup(initialize: bool) -> TestResult<TestContext> {
+    setup_with_global(initialize, SANDBOX_FT).await
+}
+
+async fn setup_with_global(initialize: bool, global_id: &str) -> TestResult<TestContext> {
+    let wasm = factory_wasm().clone();
+    let sandbox = near_sandbox::Sandbox::start_sandbox().await?;
+    let network = NetworkConfig::from_rpc_url("sandbox", sandbox.rpc_addr.parse()?);
+    let signer = Signer::from_secret_key(
+        near_sandbox::config::DEFAULT_GENESIS_ACCOUNT_PRIVATE_KEY.parse()?,
+    )?;
+    for name in [
+        "factory.sandbox",
+        "owner.sandbox",
+        "alice.sandbox",
+        "bob.sandbox",
+        global_id,
+    ] {
+        sandbox
+            .create_account(name.parse()?)
+            .initial_balance(NearToken::from_near(100))
+            .send()
+            .await?;
+    }
+    let factory = Contract("factory.sandbox".parse()?);
+    let deployment = Contract::deploy(factory.account_id().clone()).use_code(wasm);
+    let deployment = if initialize {
+        deployment
+            .with_init_call("new", json!({"global_contract_id": global_id}))?
+            .with_signer(signer.clone())
+    } else {
+        deployment.without_init_call().with_signer(signer.clone())
+    };
+    deployment.send_to(&network).await?.assert_success();
+    Ok(TestContext {
+        _sandbox: sandbox,
+        network,
+        signer,
+        factory,
+        global_contract_id: global_id.parse()?,
+        owner: Account("owner.sandbox".parse()?),
+        alice: Account("alice.sandbox".parse()?),
+        bob: Account("bob.sandbox".parse()?),
+    })
+}
+
+async fn publish_ft(ctx: &TestContext) -> TestResult<()> {
+    Contract::deploy_global_contract_code(published_ft_wasm().await?.clone())
+        .as_account_id(ctx.global_contract_id.clone())
+        .with_signer(ctx.signer.clone())
+        .send_to(&ctx.network)
         .await?
-        .into_result()?;
-
-    let alice_account = root
-        .create_subaccount("alice")
-        .initial_balance(NearToken::from_near(5))
-        .transact()
-        .await?
-        .into_result()?;
-
-    let bob_account = root
-        .create_subaccount("bob")
-        .initial_balance(NearToken::from_near(5))
-        .transact()
-        .await?
-        .into_result()?;
-
-    create_token(
-        &contract,
-        &token_owner_account,
-        &alice_account,
-        &bob_account,
-    )
-    .await?;
-
+        .assert_success();
     Ok(())
 }
 
-async fn create_token(
-    factory: &Contract,
-    token_owner_account: &Account,
-    alice_account: &Account,
-    bob_account: &Account,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // Initial setup
-    let symbol = "SOMETHING";
-    let total_supply = U128(100);
-    let token_id = symbol.to_ascii_lowercase();
-    let metadata = FungibleTokenMetadata {
-        spec: "ft-1.0.0".to_string(),
-        name: "The Something Token".to_string(),
-        symbol: symbol.to_string(),
-        decimals: 6,
-        icon: Some("data:image/svg+xml,%3Csvg width='111' height='90' viewBox='0 0 111 90' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill-rule='evenodd' clip-rule='evenodd' d='M24.4825 0.862305H88.0496C89.5663 0.862305 90.9675 1.64827 91.7239 2.92338L110.244 34.1419C111.204 35.7609 110.919 37.8043 109.549 39.1171L58.5729 87.9703C56.9216 89.5528 54.2652 89.5528 52.6139 87.9703L1.70699 39.1831C0.305262 37.8398 0.0427812 35.7367 1.07354 34.1077L20.8696 2.82322C21.6406 1.60483 23.0087 0.862305 24.4825 0.862305ZM79.8419 14.8003V23.5597H61.7343V29.6329C74.4518 30.2819 83.9934 32.9475 84.0642 36.1425L84.0638 42.803C83.993 45.998 74.4518 48.6635 61.7343 49.3125V64.2168H49.7105V49.3125C36.9929 48.6635 27.4513 45.998 27.3805 42.803L27.381 36.1425C27.4517 32.9475 36.9929 30.2819 49.7105 29.6329V23.5597H31.6028V14.8003H79.8419ZM55.7224 44.7367C69.2943 44.7367 80.6382 42.4827 83.4143 39.4727C81.0601 36.9202 72.5448 34.9114 61.7343 34.3597V40.7183C59.7966 40.8172 57.7852 40.8693 55.7224 40.8693C53.6595 40.8693 51.6481 40.8172 49.7105 40.7183V34.3597C38.8999 34.9114 30.3846 36.9202 28.0304 39.4727C30.8066 42.4827 42.1504 44.7367 55.7224 44.7367Z' fill='%23009393'/%3E%3C/svg%3E".to_string()),
-        reference: None,
-        reference_hash: None,
-    };
+fn token_args(ctx: &TestContext, symbol: &str) -> TokenArgs {
+    TokenArgs {
+        owner_id: ctx.owner.account_id().clone(),
+        total_supply: U128(100),
+        metadata: FungibleTokenMetadata {
+            spec: "ft-1.0.0".to_string(),
+            name: "The Something Token".to_string(),
+            symbol: symbol.to_string(),
+            decimals: 6,
+            icon: None,
+            reference: None,
+            reference_hash: None,
+        },
+    }
+}
 
-    let token_args = TokenArgs {
-        owner_id: token_owner_account.id().clone(),
-        total_supply,
-        metadata,
-    };
-
-    // Getting required deposit based on provided arguments
-    let required_deposit: U128 = factory
-        .view("get_required")
-        .args_json(json!({"args": token_args}))
+async fn required(ctx: &TestContext, args: &TokenArgs) -> TestResult<NearToken> {
+    Ok(ctx
+        .factory
+        .call_function("get_required", json!({"args": args}))
+        .read_only()
+        .fetch_from(&ctx.network)
         .await?
-        .json()?;
+        .data)
+}
 
-    // Creating token with less than required deposit (should fail)
-    let not_enough = alice_account
-        .call(factory.id(), "create_token")
-        .args_json(json!({"args": token_args}))
-        .max_gas()
-        .deposit(NearToken::from_yoctonear(required_deposit.0 - 1))
-        .transact()
+async fn create(
+    ctx: &TestContext,
+    user: &Account,
+    args: &TokenArgs,
+    deposit: NearToken,
+) -> TestResult<bool> {
+    Ok(ctx
+        .factory
+        .call_function("create_token", json!({"args": args}))
+        .transaction()
+        .deposit(deposit)
+        .gas(NearGas::from_tgas(300))
+        .with_signer(user.account_id().clone(), ctx.signer.clone())
+        .send_to(&ctx.network)
+        .await?
+        .assert_success()
+        .json()?)
+}
+
+async fn ft_balance(ctx: &TestContext, token: &Contract, user: &Account) -> TestResult<U128> {
+    Ok(token
+        .call_function("ft_balance_of", json!({"account_id": user.account_id()}))
+        .read_only()
+        .fetch_from(&ctx.network)
+        .await?
+        .data)
+}
+
+#[tokio::test]
+async fn test_create_token_and_transfers() -> TestResult<()> {
+    let ctx = setup(true).await?;
+    publish_ft(&ctx).await?;
+    let args = token_args(&ctx, "SOMETHING");
+    let deposit = required(&ctx, &args).await?;
+
+    assert_eq!(deposit, NearToken::from_yoctonear(0));
+    assert!(create(&ctx, &ctx.alice, &args, deposit).await?);
+
+    let token_account = Account(format!("something.{}", ctx.factory.account_id()).parse()?);
+    let token = token_account.as_contract();
+    let account = token_account.view().fetch_from(&ctx.network).await?.data;
+    assert_eq!(
+        account.contract_state,
+        ContractState::GlobalAccountId(SANDBOX_FT.parse()?)
+    );
+    assert_eq!(deposit, minimum_storage_deposit(account.storage_usage));
+    assert!(token_account
+        .list_keys()
+        .fetch_from(&ctx.network)
+        .await?
+        .data
+        .is_empty());
+
+    let metadata: FungibleTokenMetadata = token
+        .call_function("ft_metadata", ())
+        .read_only()
+        .fetch_from(&ctx.network)
+        .await?
+        .data;
+    assert_eq!(
+        serde_json::to_value(&metadata)?,
+        serde_json::to_value(&args.metadata)?
+    );
+    let supply: U128 = token
+        .call_function("ft_total_supply", ())
+        .read_only()
+        .fetch_from(&ctx.network)
+        .await?
+        .data;
+    assert_eq!(supply.0, args.total_supply.0);
+    assert_eq!(ft_balance(&ctx, &token, &ctx.owner).await?.0, supply.0);
+
+    let before = ctx.bob.view().fetch_from(&ctx.network).await?.data.amount;
+    assert!(!create(&ctx, &ctx.bob, &args, NearToken::from_millinear(100)).await?);
+    let after = ctx.bob.view().fetch_from(&ctx.network).await?.data.amount;
+    assert!(
+        before.saturating_sub(after) < NearToken::from_millinear(10),
+        "Duplicate creation must refund the deposit"
+    );
+
+    for user in [&ctx.alice, &ctx.bob] {
+        token
+            .call_function("storage_deposit", json!({"account_id": user.account_id()}))
+            .transaction()
+            .deposit(NearToken::from_millinear(250))
+            .with_signer(user.account_id().clone(), ctx.signer.clone())
+            .send_to(&ctx.network)
+            .await?
+            .assert_success();
+        assert_eq!(ft_balance(&ctx, &token, user).await?.0, 0);
+    }
+    for (sender, receiver, amount) in [(&ctx.owner, &ctx.alice, "2"), (&ctx.alice, &ctx.bob, "1")] {
+        token
+            .call_function(
+                "ft_transfer",
+                json!({"receiver_id": receiver.account_id(), "amount": amount}),
+            )
+            .transaction()
+            .deposit(NearToken::from_yoctonear(1))
+            .with_signer(sender.account_id().clone(), ctx.signer.clone())
+            .send_to(&ctx.network)
+            .await?
+            .assert_success();
+    }
+    assert_eq!(ft_balance(&ctx, &token, &ctx.owner).await?.0, 98);
+    assert_eq!(ft_balance(&ctx, &token, &ctx.alice).await?.0, 1);
+    assert_eq!(ft_balance(&ctx, &token, &ctx.bob).await?.0, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_required_covers_large_metadata() -> TestResult<()> {
+    let ctx = setup(true).await?;
+    publish_ft(&ctx).await?;
+    let mut args = token_args(&ctx, "LARGE");
+    let base = required(&ctx, &args).await?;
+    args.metadata.icon = Some(format!("data:image/svg+xml,{}", "x".repeat(20_000)));
+    let deposit = required(&ctx, &args).await?;
+    assert!(deposit > base);
+    let insufficient = ctx
+        .factory
+        .call_function("create_token", json!({"args": args}))
+        .transaction()
+        .deposit(NearToken::from_yoctonear(deposit.as_yoctonear() - 1))
+        .gas(NearGas::from_tgas(300))
+        .with_signer(ctx.alice.account_id().clone(), ctx.signer.clone())
+        .send_to(&ctx.network)
         .await?;
-    assert!(not_enough.is_failure());
+    assert!(insufficient.is_failure());
+    assert!(format!("{insufficient:?}").contains("Attach at least"));
+    assert!(create(&ctx, &ctx.alice, &args, deposit).await?);
+    let token = Account(format!("large.{}", ctx.factory.account_id()).parse()?);
+    let account = token.view().fetch_from(&ctx.network).await?.data;
+    assert_eq!(deposit, minimum_storage_deposit(account.storage_usage));
+    let metadata: FungibleTokenMetadata = token
+        .as_contract()
+        .call_function("ft_metadata", ())
+        .read_only()
+        .fetch_from(&ctx.network)
+        .await?
+        .data;
+    assert_eq!(metadata.icon, args.metadata.icon);
+    Ok(())
+}
 
-    // Creating token with the required deposit
-    let alice_succeeds = alice_account
-        .call(factory.id(), "create_token")
-        .args_json(json!({"args": token_args}))
-        .max_gas()
-        .deposit(NearToken::from_yoctonear(required_deposit.0))
-        .transact()
+#[tokio::test]
+async fn test_initialization_and_validation() -> TestResult<()> {
+    let ctx = setup(false).await?;
+    let args = token_args(&ctx, "TOKEN");
+    let uninitialized = ctx
+        .factory
+        .call_function("get_required", json!({"args": args}))
+        .read_only::<NearToken>()
+        .fetch_from(&ctx.network)
+        .await;
+    assert!(uninitialized.is_err());
+    assert!(format!("{uninitialized:?}").contains("not initialized"));
+    ctx.factory
+        .call_function("new", json!({"global_contract_id": SANDBOX_FT}))
+        .transaction()
+        .with_signer(ctx.factory.account_id().clone(), ctx.signer.clone())
+        .send_to(&ctx.network)
+        .await?
+        .assert_success();
+    let repeat = ctx
+        .factory
+        .call_function("new", json!({"global_contract_id": SANDBOX_FT}))
+        .transaction()
+        .with_signer(ctx.factory.account_id().clone(), ctx.signer.clone())
+        .send_to(&ctx.network)
         .await?;
-    assert!(alice_succeeds.json::<bool>()? == true);
+    assert!(repeat.is_failure());
+    assert!(format!("{repeat:?}").contains("already been initialized"));
 
-    // Creating same token fails
-    let bob_balance = bob_account.view_account().await?.balance;
+    let deposit = required(&ctx, &args).await?;
+    let mut invalid_symbol = token_args(&ctx, "NOT-VALID");
+    let mut invalid_metadata = token_args(&ctx, "INVALID");
+    invalid_metadata.metadata.spec = "wrong".to_string();
+    let mut too_long = token_args(&ctx, &"A".repeat(64));
+    for (args, expected) in [
+        (&mut invalid_symbol, "Invalid Symbol"),
+        (&mut invalid_metadata, "require! assertion failed"),
+        (&mut too_long, "Token Account ID is invalid"),
+    ] {
+        let outcome = ctx
+            .factory
+            .call_function("create_token", json!({"args": args}))
+            .transaction()
+            .deposit(deposit)
+            .gas(NearGas::from_tgas(300))
+            .with_signer(ctx.alice.account_id().clone(), ctx.signer.clone())
+            .send_to(&ctx.network)
+            .await?;
+        assert!(outcome.is_failure());
+        assert!(format!("{outcome:?}").contains(expected), "{outcome:?}");
+    }
+    Ok(())
+}
 
-    let bob_fails = bob_account
-        .call(factory.id(), "create_token")
-        .args_json(json!({"args": token_args}))
-        .max_gas()
-        .deposit(NearToken::from_yoctonear(required_deposit.0))
-        .transact()
-        .await?;
+fn minimum_storage_deposit(storage_bytes: u64) -> NearToken {
+    if storage_bytes <= 770 {
+        NearToken::from_yoctonear(0)
+    } else {
+        NearToken::from_yoctonear(storage_bytes as u128 * 10_u128.pow(19))
+    }
+}
 
-    let bob_balance_after = bob_account.view_account().await?.balance;
-    let rest = bob_balance.saturating_sub(bob_balance_after).as_millinear();
-    println!("{:?}", rest);
+#[tokio::test]
+async fn test_required_at_zero_balance_boundary() -> TestResult<()> {
+    let ctx = setup(true).await?;
+    publish_ft(&ctx).await?;
+    for bytes in [769, 770, 771] {
+        let mut args = token_args(&ctx, &format!("EDGE{bytes}"));
+        args.metadata.icon = Some(String::new());
+        let base_bytes =
+            261 + ctx.global_contract_id.as_bytes().len() + near_sdk::borsh::to_vec(&args)?.len();
+        args.metadata.icon = Some("x".repeat(bytes - base_bytes));
+        let deposit = required(&ctx, &args).await?;
+        assert!(create(&ctx, &ctx.alice, &args, deposit).await?);
+        let token = Account(format!("edge{bytes}.{}", ctx.factory.account_id()).parse()?);
+        let account = token.view().fetch_from(&ctx.network).await?.data;
+        assert_eq!(account.storage_usage, bytes as u64);
+        assert_eq!(deposit, minimum_storage_deposit(account.storage_usage));
+    }
+    Ok(())
+}
 
-    // bob fails
-    assert!(bob_fails.json::<bool>()? == false);
-
-    // but it gets back the money (i.e. looses less than 0.005 N)
-    assert!(rest < 5);
-
-    // Checking created token account and metadata
-    let token_account_id: AccountId = format!("{}.{}", token_id, factory.id()).parse().unwrap();
-    let token_metadata: FungibleTokenMetadata = token_owner_account
-        .view(&token_account_id, "ft_metadata")
-        .args_json(json!({}))
-        .await?
-        .json()?;
-
-    assert_eq!(token_metadata.symbol, symbol);
-
-    // Checking token supply
-    let token_total_supply: U128 = token_owner_account
-        .view(&token_account_id, "ft_total_supply")
-        .args_json(json!({}))
-        .await?
-        .json()?;
-    assert_eq!(token_total_supply.0, total_supply.0);
-
-    // Checking total supply belongs to the owner account
-    let token_owner_balance: U128 = token_owner_account
-        .view(&token_account_id, "ft_balance_of")
-        .args_json(json!({"account_id": token_owner_account.id()}))
-        .await?
-        .json()?;
-
-    assert_eq!(token_owner_balance.0, total_supply.0);
-
-    // Checking transferring tokens from owner to other account
-    let _ = alice_account
-        .call(&token_account_id, "storage_deposit")
-        .args_json(json!({"account_id": alice_account.id()}))
-        .max_gas()
-        .deposit(NearToken::from_millinear(250))
-        .transact()
-        .await?;
-
-    let alice_balance_before: U128 = alice_account
-        .view(&token_account_id, "ft_balance_of")
-        .args_json(json!({"account_id": alice_account.id()}))
-        .await?
-        .json()?;
-    assert_eq!(alice_balance_before.0, 0);
-
-    let _ = token_owner_account
-        .call(&token_account_id, "ft_transfer")
-        .args_json(json!({
-            "receiver_id": alice_account.id(),
-            "amount": "2",
-        }))
-        .max_gas()
-        .deposit(NearToken::from_yoctonear(1))
-        .transact()
-        .await?;
-
-    let alice_balance_after: U128 = alice_account
-        .view(&token_account_id, "ft_balance_of")
-        .args_json(json!({"account_id": alice_account.id()}))
-        .await?
-        .json()?;
-    assert_eq!(alice_balance_after.0, 2);
-
-    // Checking transferring token from alice to bob
-    let _ = bob_account
-        .call(&token_account_id, "storage_deposit")
-        .args_json(json!({"account_id": bob_account.id()}))
-        .max_gas()
-        .deposit(NearToken::from_millinear(250))
-        .transact()
-        .await?;
-    let bob_balance_before: U128 = bob_account
-        .view(&token_account_id, "ft_balance_of")
-        .args_json(json!({"account_id": bob_account.id()}))
-        .await?
-        .json()?;
-    assert_eq!(bob_balance_before.0, 0);
-
-    let _ = alice_account
-        .call(&token_account_id, "ft_transfer")
-        .args_json(json!({
-            "receiver_id": bob_account.id(),
-            "amount": "1",
-        }))
-        .max_gas()
-        .deposit(NearToken::from_yoctonear(1))
-        .transact()
-        .await?;
-    let bob_balance_after: U128 = bob_account
-        .view(&token_account_id, "ft_balance_of")
-        .args_json(json!({"account_id": bob_account.id()}))
-        .await?
-        .json()?;
-    assert_eq!(bob_balance_after.0, 1);
-
-    let alice_balance_after: U128 = alice_account
-        .view(&token_account_id, "ft_balance_of")
-        .args_json(json!({"account_id": alice_account.id()}))
-        .await?
-        .json()?;
-    assert_eq!(alice_balance_after.0, 1);
-
-    // Checking total supply belongs to the owner account
-    let token_owner_balance: U128 = token_owner_account
-        .view(&token_account_id, "ft_balance_of")
-        .args_json(json!({"account_id": token_owner_account.id()}))
-        .await?
-        .json()?;
-
-    assert_eq!(token_owner_balance.0, total_supply.0 - 2);
-
+#[tokio::test]
+async fn test_required_with_variable_fields() -> TestResult<()> {
+    let global = format!("{}.sandbox", "g".repeat(56));
+    let ctx = setup_with_global(true, &global).await?;
+    publish_ft(&ctx).await?;
+    for (index, owner) in ["a.near".to_string(), format!("{}.near", "o".repeat(59))]
+        .into_iter()
+        .enumerate()
+    {
+        let mut args = token_args(&ctx, &format!("FIELDS{index}"));
+        args.owner_id = owner.parse()?;
+        args.total_supply = U128(u128::MAX);
+        args.metadata.name = "Token 🪙 日本語".repeat(40);
+        args.metadata.icon = Some(String::new());
+        args.metadata.reference = Some("https://example.com/token.json".to_string());
+        args.metadata.reference_hash = Some(near_sdk::json_types::Base64VecU8(vec![0; 32]));
+        let deposit = required(&ctx, &args).await?;
+        assert!(create(&ctx, &ctx.alice, &args, deposit).await?);
+        let token = Account(format!("fields{index}.{}", ctx.factory.account_id()).parse()?);
+        let account = token.view().fetch_from(&ctx.network).await?.data;
+        assert_eq!(deposit, minimum_storage_deposit(account.storage_usage));
+        let balance: U128 = token
+            .as_contract()
+            .call_function("ft_balance_of", json!({"account_id": args.owner_id}))
+            .read_only()
+            .fetch_from(&ctx.network)
+            .await?
+            .data;
+        assert_eq!(balance.0, args.total_supply.0);
+    }
     Ok(())
 }
