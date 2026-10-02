@@ -1,77 +1,86 @@
-# Factory Contract with Global Contracts Example
+# Fungible Token Factory
 
-This example demonstrates how to use NEAR's global contract functionality to deploy and use global smart contracts.
+This factory creates a subaccount for each token, attaches the shared global FT
+contract, and initializes it with the supplied owner, total supply, and metadata.
+It does not embed or build a local FT contract.
 
-Global contracts allow sharing contract code globally across the NEAR network, reducing deployment costs and enabling efficient code reuse.
+## Build and deploy
 
-## Key Features
-
-- Deploy a global contract using `deploy_global_contract()`
-- Use an existing global contract by hash with `use_global_contract()`
-- Use an existing global contract by deployer account with `use_global_contract_by_account_id()`
-- Integration tests using near-workspaces
-
-## Install `cargo-near` build tool
-
-See [`cargo-near` installation](https://github.com/near/cargo-near#installation)
-
-## Build with:
+Install [cargo-near](https://github.com/near/cargo-near#installation), then run:
 
 ```bash
 cargo near build
+cargo near deploy
 ```
 
-## Run Tests:
+Initialize the factory during deployment by calling `new` with:
 
-### Unit Tests
+```json
+{"global_contract_id": "ft.globals.primitives.testnet"}
+```
+
+Use `ft.globals.primitives.near` on mainnet. Initialization is required and can
+only run once. Accounts referencing this global contract follow updates published
+by its owner.
+
+## Create a token
+
+Both `get_required` and `create_token` accept the same `args` object:
+
+```json
+{
+  "args": {
+    "owner_id": "alice.testnet",
+    "total_supply": "100000000",
+    "metadata": {
+      "spec": "ft-1.0.0",
+      "name": "Example Token",
+      "symbol": "EXAMPLE",
+      "decimals": 6,
+      "icon": null,
+      "reference": null,
+      "reference_hash": null
+    }
+  }
+}
+```
+
+First call `get_required` as a view function. Its result is the required deposit
+in yoctoNEAR, encoded as a JSON string. Attach that amount when calling
+`create_token` with 300 Tgas. The symbol determines the subaccount:
+`EXAMPLE` creates `example.<factory-account>`. Symbols must contain only ASCII
+letters and digits, and the resulting account ID must be valid.
+
+The owner receives the full initial supply, expressed in the token's smallest
+units. Created token accounts have no access keys. `create_token` returns `true`
+on success; failed account creation or FT initialization returns `false` and
+refunds the attached deposit. Invalid arguments or insufficient deposits fail
+the initial call.
+
+`get_required` calculates initial storage for the published
+[near-examples/FT implementation](https://github.com/near-examples/FT): serialized
+token arguments + 261 bytes of fixed storage overhead + the global contract ID's
+byte length. It returns zero for footprints of at most 770 bytes; larger
+footprints require funding the entire storage size at the current storage byte
+cost. Gas is paid separately. The calculation must be revisited if the global
+FT's storage layout or protocol storage rules change.
+
+Users register separately through the FT's `storage_deposit` method before
+receiving transfers; their future storage is not included in the initial deposit.
+
+## Test
+
 ```bash
 cargo test
 ```
 
-### Integration Tests
-```bash
-cargo test --test workspaces
-cargo test --test realistic
-```
+Tests use near-api and near-sandbox. They fetch the published FT code from
+`ft.globals.primitives.near` once per test run and deploy it as a global contract
+inside the local sandbox. Internet access to the mainnet RPC is required to fetch
+the code; all transactions run locally.
 
-## Create testnet dev-account:
-
-```bash
-cargo near create-dev-account
-```
-
-## Deploy to dev-account:
-
-```bash
-cargo near deploy
-```
-
-## How Global Contracts Work
-
-1. **Deploy Global Contract**: A contract deploys bytecode as a global contract, making it available network-wide
-2. **Use by Hash**: Other contracts can reference the global contract by its code hash
-3. **Use by Account**: Contracts can reference a global contract by the account that deployed it
-
-This reduces storage costs and enables code sharing across the ecosystem.
-
-## Use Cases from NEP-591
-
-- **Multisig Contracts**: Deploy once, use for many wallets without paying 3N each time
-- **Smart Contract Wallets**: Efficient user onboarding with chain signatures
-- **Business Onboarding**: Companies can deploy user accounts cost-effectively
-- **DeFi Templates**: Share common contract patterns across protocols
-
-## Runtime Requirements
-
-⚠️ **Important**: Global contracts are not yet available in released versions of nearcore.
-
-- **Current Status**: Global contract host functions are implemented in nearcore but will first be available in version 2.7.0
-- **SDK Status**: This near-sdk-rs implementation is ready and waiting for runtime support
-- **Testing**: Integration tests require a custom nearcore build with global contract support
-
-### When Available
-
-Once nearcore 2.7.0 is released, you'll be able to:
-- Deploy global contracts on mainnet and testnet
-- Run integration tests with near-workspaces using version "2.7.0" or later
-- Use all the functionality demonstrated in this example
+Coverage includes explicit initialization, token metadata and supply, ownership
+of the initial balance, storage registration and transfers, deposit enforcement,
+duplicate creation refunds, invalid arguments, exact storage quotes for large
+metadata, the 769/770/771-byte boundary, Unicode metadata, and variable owner and
+global contract IDs.
